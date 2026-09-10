@@ -1,0 +1,8 @@
+# One line ending everywhere: this repo is edited on Windows and built on CI.
+* text=auto eol=lf
+
+*.png binary
+*.jar binary
+*.jks binary
+gradlew text eol=lf
+gradlew.bat text eol=crlf

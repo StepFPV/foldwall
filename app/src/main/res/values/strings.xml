@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FoldWall</string>
+    <string name="app_author">StepDesign</string>
+    <string name="wallpaper_label">FoldWall</string>
+    <string name="wallpaper_desc">Lo sfondo reagisce all\'angolo della cerniera: sfocatura, piega e colore cambiano mentre apri e chiudi il telefono.</string>
+</resources>

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="216dp"
+    android:height="384dp"
+    android:viewportWidth="216"
+    android:viewportHeight="384">
+    <path android:pathData="M0,0h216v384h-216z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0"
+                android:startY="0"
+                android:endX="216"
+                android:endY="384">
+                <item android:offset="0" android:color="#FF101A2E" />
+                <item android:offset="1" android:color="#FF2E1030" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Crease valley: the signature of the effect, dark core with a soft lit edge. -->
+    <path android:pathData="M84,0h48v384h-48z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="84"
+                android:startY="0"
+                android:endX="132"
+                android:endY="0">
+                <item android:offset="0" android:color="#0095E4FF" />
+                <item android:offset="0.35" android:color="#66000000" />
+                <item android:offset="0.5" android:color="#99000000" />
+                <item android:offset="0.65" android:color="#66000000" />
+                <item android:offset="1" android:color="#0095E4FF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:pathData="M107,0 L109,0 L109,384 L107,384 Z"
+        android:fillColor="#5595E4FF" />
+</vector>

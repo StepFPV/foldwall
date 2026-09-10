@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Left panel, angled so the crease edge reads as the nearest one. -->
+    <path
+        android:pathData="M26,33 L52,26 L52,82 L26,75 Z"
+        android:fillColor="#FFC3D2FF" />
+    <!-- Right panel, dimmer: it faces away from the light. -->
+    <path
+        android:pathData="M56,26 L82,33 L82,75 L56,82 Z"
+        android:fillColor="#FF7186CE" />
+    <!-- Crease highlight. -->
+    <path
+        android:pathData="M52.6,24 L55.4,24 L55.4,84 L52.6,84 Z"
+        android:fillColor="#FF95E4FF" />
+</vector>
