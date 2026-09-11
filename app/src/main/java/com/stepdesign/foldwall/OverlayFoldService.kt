@@ -15,6 +15,7 @@ import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.view.Display
 import android.media.Image
 import android.media.ImageReader
 import android.media.projection.MediaProjection
@@ -77,6 +78,9 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
     private var captureWidth = 0
     private var captureHeight = 0
 
+    /** Display rotation at the instant the frozen frame was taken. */
+    private var captureRotation = 0
+
     private var state = State.IDLE
 
     /** Read on the capture thread, written on the main one: the gate for a single frame. */
@@ -92,7 +96,14 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
     private var lastAngle = Float.NaN
     private var hingeEvents = 0L
     private var lastEventUptime = 0L
-    private var travelSinceIdle = 0f
+    /**
+     * Hinge angle the device was resting at before the current gesture began, and the
+     * baseline the trigger measures departure from.
+     */
+    private var restAngle = Float.NaN
+
+    /** Direction of the last hinge movement: -1 closing, +1 opening, 0 none yet. */
+    private var lastDirection = 0
     private var lastMovementUptime = 0L
     private var shownAtUptime = 0L
     private var fadeStartUptime = 0L
@@ -291,6 +302,7 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         val display = virtualDisplay ?: return
         state = State.CAPTURING
         awaitingFrame = true
+        captureRotation = displayRotation()
         Log.i(TAG, "fold started at " + lastAngle + "°, grabbing one frame")
         report("cattura in corso")
         main.postDelayed(captureTimeout, CAPTURE_TIMEOUT_MS)
@@ -326,7 +338,7 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         awaitingFrame = false
         parkDisplay()
         state = State.IDLE
-        travelSinceIdle = 0f
+        restAngle = lastAngle
     }
 
     private fun parkDisplay() {
@@ -432,6 +444,27 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
 
     // --- overlay ---------------------------------------------------------------------
 
+    /**
+     * Surface.ROTATION_* of the display this service is drawing on.
+     *
+     * Asked of the DisplayManager, not of the service's own context: a Service is not a
+     * visual context and `Context.getDisplay()` throws there.
+     */
+    private fun displayRotation(): Int =
+        try {
+            getSystemService(DisplayManager::class.java)
+                ?.getDisplay(Display.DEFAULT_DISPLAY)?.rotation ?: 0
+        } catch (e: Exception) {
+            Log.w(TAG, "cannot read the display rotation", e)
+            0
+        }
+
+    /**
+     * How far the frozen frame has to be turned to line up with the screen as it is now.
+     * A display rotated one step further on needs its old picture turned one step back.
+     */
+    private fun frameTurn(): Int = (((captureRotation - displayRotation()) % 4) + 4) % 4 * 90
+
     private fun showOverlay() {
         if (overlay != null) return
 
@@ -459,6 +492,7 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         }
 
         val view = FoldOverlayView(this)
+        view.frameRotation = frameTurn()
         view.onTouched = { beginFade() }
         view.onResized = { w, h -> onOverlayResized(w, h) }
         view.settings = settings
@@ -503,7 +537,7 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         // Dropped, never recycled: the view's display list can still reference it.
         frame = null
         state = State.IDLE
-        travelSinceIdle = 0f
+        restAngle = lastAngle
         fadeStartUptime = 0L
         report("in attesa della cerniera")
     }
@@ -517,8 +551,22 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
     private fun onOverlayResized(width: Int, height: Int) {
         val bitmap = frame ?: return
         if (width <= 0 || height <= 0) return
+        val view = overlay
+        if (view != null) {
+            val turn = frameTurn()
+            if (view.frameRotation != turn) {
+                Log.i(TAG, "display turned since capture, rotating frame by " + turn + "°")
+                view.frameRotation = turn
+                view.invalidate()
+            }
+        }
         val wanted = width.toFloat() / height
-        val have = bitmap.width.toFloat() / bitmap.height
+        val turned = frameTurn() == 90 || frameTurn() == 270
+        val have = if (turned) {
+            bitmap.height.toFloat() / bitmap.width
+        } else {
+            bitmap.width.toFloat() / bitmap.height
+        }
         if (abs(wanted - have) / wanted <= ASPECT_TOLERANCE) return
         Log.i(TAG, "panel changed under the overlay (" + width + "x" + height + "), recapturing")
         // Never remove a window from inside its own layout pass.
@@ -553,31 +601,49 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         val previous = lastAngle
         lastAngle = angle
         val now = SystemClock.uptimeMillis()
-        val sinceLastEvent = now - lastEventUptime
         lastEventUptime = now
         if (previous.isNaN()) return
 
         val delta = abs(angle - previous)
         if (delta < JITTER_DEG) {
-            // A device sitting still still emits events; that is not a fold.
-            if (state == State.IDLE && sinceLastEvent > IDLE_RESET_MS) travelSinceIdle = 0f
+            // A device sitting still still emits events; that is not a fold. Once it has
+            // been still a while, wherever it is now is the new resting position.
+            if (state == State.IDLE && now - lastMovementUptime > IDLE_RESET_MS) {
+                restAngle = angle
+            }
             return
         }
+        val sinceLastMovement = now - lastMovementUptime
         lastMovementUptime = now
+        val direction = if (angle > previous) 1 else -1
 
         when (state) {
             State.IDLE -> {
-                if (sinceLastEvent > IDLE_RESET_MS) travelSinceIdle = 0f
-                travelSinceIdle += delta
+                // Measure how far the hinge has departed from where it was resting, rather
+                // than adding up per-event travel and clearing the total whenever two
+                // events fell far apart. TYPE_HINGE_ANGLE is an on-change sensor, so a
+                // gentle fold produces ~1 degree steps most of a second apart: any rule
+                // that reads silence between events as "the gesture ended" throws the
+                // gesture away and the effect never fires. How fast the fold is should
+                // not decide whether it counts.
+                //
+                // What separates one gesture from the next is the hinge turning back the
+                // other way, which no amount of slowness looks like. Long silence still
+                // re-anchors as a backstop, for a device left half-open for a while.
+                val newGesture = restAngle.isNaN() ||
+                    direction != lastDirection ||
+                    sinceLastMovement > REST_SILENCE_MS
+                if (newGesture) restAngle = previous
                 // Nothing to show at a flat device, and arming here would ping-pong:
                 // leaving on "back to flat" is itself movement, which would re-arm at once.
-                if (travelSinceIdle >= TRIGGER_DEG && targetOpenness < FLAT_ABOVE) {
+                if (abs(angle - restAngle) >= TRIGGER_DEG && targetOpenness < FLAT_ABOVE) {
                     requestCapture()
                 }
             }
             State.SHOWING -> requestFrame()
             State.CAPTURING -> Unit
         }
+        lastDirection = direction
     }
 
     override fun doFrame(frameTimeNanos: Long) {
@@ -736,7 +802,12 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         private const val CAPTURE_CAP_PX = 1440
 
         private const val MAX_IMAGES = 2
-        private const val CAPTURE_TIMEOUT_MS = 600L
+        /**
+         * How long to wait for the one frame. 600ms was measured on an emulator where the
+         * capture lands in ~80ms; a real device un-parking a mirror under load is slower,
+         * and giving up early is why the effect sometimes simply did not appear.
+         */
+        private const val CAPTURE_TIMEOUT_MS = 1_500L
 
         /** Degrees of sensor noise to ignore. */
         private const val JITTER_DEG = 0.4f
@@ -746,6 +817,13 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
 
         /** Movement older than this is a separate gesture, not the same one. */
         private const val IDLE_RESET_MS = 500L
+
+        /**
+         * Silence that ends a gesture on its own, with no change of direction. Generous on
+         * purpose: an on-change hinge sensor is silent between the steps of a slow fold,
+         * and anything tighter mistakes a careful fold for a finished one.
+         */
+        private const val REST_SILENCE_MS = 2_000L
 
         /**
          * Kept on screen this long after the hinge goes quiet. Long enough that pausing

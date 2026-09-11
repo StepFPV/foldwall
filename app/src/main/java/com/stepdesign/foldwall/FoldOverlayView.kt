@@ -39,6 +39,16 @@ class FoldOverlayView(context: Context) : View(context) {
     /** Called when the window is laid out at a new size, including a panel hand-over. */
     var onResized: ((Int, Int) -> Unit)? = null
 
+    /**
+     * Degrees to turn the frozen frame by before drawing it.
+     *
+     * The screen is captured in whatever orientation the display had at that instant, and
+     * a foldable changes orientation mid-gesture: the inner and cover panels do not share
+     * a natural orientation, so a frame captured on one and drawn on the other arrives a
+     * quarter turn out.
+     */
+    var frameRotation: Int = 0
+
     init {
         // The frozen frame covers every pixel, so let the renderer skip whatever is behind.
         setWillNotDraw(false)
@@ -78,14 +88,30 @@ class FoldOverlayView(context: Context) : View(context) {
         val bitmap = frame ?: return
         if (bitmap.isRecycled || width <= 0 || height <= 0) return
 
+        val turn = ((frameRotation % 360) + 360) % 360
+        val quarter = turn == 90 || turn == 270
+
         // Cover, not fit: the capture is downscaled and its aspect can differ from the
         // panel by a rounding, and a letterbox would show the live screen through it.
-        val scale = max(width.toFloat() / bitmap.width, height.toFloat() / bitmap.height)
+        // On a quarter turn the bitmap's own axes swap roles against the screen's.
+        val scale = if (quarter) {
+            max(height.toFloat() / bitmap.width, width.toFloat() / bitmap.height)
+        } else {
+            max(width.toFloat() / bitmap.width, height.toFloat() / bitmap.height)
+        }
         val dw = bitmap.width * scale
         val dh = bitmap.height * scale
-        val left = (width - dw) / 2f
-        val top = (height - dh) / 2f
-        dst.set(left, top, left + dw, top + dh)
+        val cx = width / 2f
+        val cy = height / 2f
+        dst.set(cx - dw / 2f, cy - dh / 2f, cx + dw / 2f, cy + dh / 2f)
+
+        if (turn == 0) {
+            canvas.drawBitmap(bitmap, null, dst, paint)
+            return
+        }
+        val saved = canvas.save()
+        canvas.rotate(turn.toFloat(), cx, cy)
         canvas.drawBitmap(bitmap, null, dst, paint)
+        canvas.restoreToCount(saved)
     }
 }
