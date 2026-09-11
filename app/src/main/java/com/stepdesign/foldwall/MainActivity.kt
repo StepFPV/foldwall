@@ -675,8 +675,18 @@ private fun OverlaySection(
                 Text("Spegni")
             }
             OutlinedButton(onClick = onTest, modifier = Modifier.fillMaxWidth()) {
-                Text("Prova adesso (senza piegare)")
+                Text("Prova a tempo (2,6 s, senza piegare)")
             }
+            Text(
+                "Questa prova \u00e8 a tempo fisso apposta, serve solo a vedere se l'effetto " +
+                    "arriva a schermo con il telefono fermo. Piegando davvero \u00e8 diverso: " +
+                    "la sfocatura segue l'angolo, se ti fermi a met\u00e0 resta a met\u00e0, e " +
+                    "sparisce appena torni piatto. Restando fermo se ne va comunque dopo " +
+                    "un paio di secondi: \u00e8 una fotografia congelata, il telefono deve " +
+                    "tornare utilizzabile.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             OverlayDiagnostics()
         } else if (!canOverlay) {
             Button(onClick = { onToggle(true) }, modifier = Modifier.fillMaxWidth()) {
@@ -728,6 +738,7 @@ private fun OverlayDiagnostics() {
     }
     val events = OverlayFoldService.seenHingeEvents
     val angle = OverlayFoldService.seenHingeAngle
+    val openness = OverlayFoldService.seenOpenness
     val status = OverlayFoldService.status
     @Suppress("UNUSED_EXPRESSION")
     tick
@@ -737,6 +748,12 @@ private fun OverlayDiagnostics() {
             append("cerniera ").append(events).append(" eventi")
             if (!angle.isNaN()) {
                 append("  ultimo ").append(String.format(Locale.US, "%.1f", angle)).append('\u00b0')
+            }
+            if (!openness.isNaN()) {
+                append('\n').append("apertura ")
+                    .append(String.format(Locale.US, "%.2f", openness))
+                    .append("   sfocatura ")
+                    .append((72f * (1f - openness)).toInt()).append(" px")
             }
         },
         style = MaterialTheme.typography.bodySmall,

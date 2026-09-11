@@ -101,6 +101,9 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
     private var testSweepStart = 0L
     private var testPending = false
 
+    /** True once the fold has gone far enough for the effect to actually be on screen. */
+    private var engaged = false
+
     private val prefListener =
         SharedPreferences.OnSharedPreferenceChangeListener { prefs, _ ->
             val next = FoldSettings.read(prefs)
@@ -420,6 +423,7 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         lastFrameNanos = 0L
         testSweepStart = if (testPending) now else 0L
         testPending = false
+        engaged = false
         // The frozen frame is already the current state of the fold, so start there
         // instead of easing in from wherever the previous run finished.
         currentOpenness = targetOpenness
@@ -484,6 +488,7 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         parkDisplay()
         testSweepStart = 0L
         testPending = false
+        engaged = false
         val view = overlay
         overlay = null
         overlayParams = null
@@ -539,6 +544,10 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         hingeEvents++
         seenHingeEvents = hingeEvents
         seenHingeAngle = angle
+        seenOpenness = targetOpenness
+        // Calibration no longer depends on FoldWall being the wallpaper: this service
+        // receives the hinge whatever is on the home screen.
+        FoldObserved.record(this, angle)
         if (hingeEvents == 1L) Log.i(TAG, "first hinge event at " + angle + "°")
 
         val previous = lastAngle
@@ -560,7 +569,11 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
             State.IDLE -> {
                 if (sinceLastEvent > IDLE_RESET_MS) travelSinceIdle = 0f
                 travelSinceIdle += delta
-                if (travelSinceIdle >= TRIGGER_DEG) requestCapture()
+                // Nothing to show at a flat device, and arming here would ping-pong:
+                // leaving on "back to flat" is itself movement, which would re-arm at once.
+                if (travelSinceIdle >= TRIGGER_DEG && targetOpenness < FLAT_ABOVE) {
+                    requestCapture()
+                }
             }
             State.SHOWING -> requestFrame()
             State.CAPTURING -> Unit
@@ -606,9 +619,14 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         val quietFor = now - lastMovementUptime
         // The hard cap is the safety valve: a sensor that stops reporting must not leave
         // a frozen screenshot glued over the phone.
+        if (currentOpenness < ENGAGED_BELOW) engaged = true
+        // Back to flat is the honest end of the gesture, and it is an angle, not a timer:
+        // finish there rather than waiting for the hinge to be quiet for a while.
+        val backToFlat = engaged && currentOpenness > FLAT_ABOVE
         val cap = MAX_SHOW_MS + if (testSweepStart != 0L) TEST_SWEEP_MS.toLong() else 0L
         val expired = now - shownAtUptime > cap
-        if (expired || (testSweepStart == 0L && settled && quietFor > HOLD_MS)) beginFade()
+        val stalled = settled && quietFor > HOLD_MS
+        if (expired || (testSweepStart == 0L && (backToFlat || stalled))) beginFade()
 
         if (fadeStartUptime != 0L) {
             val t = ((now - fadeStartUptime).toFloat() / FADE_MS).coerceIn(0f, 1f)
@@ -729,11 +747,15 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         /** Movement older than this is a separate gesture, not the same one. */
         private const val IDLE_RESET_MS = 500L
 
-        /** Kept on screen this long after the hinge goes quiet. */
-        private const val HOLD_MS = 700L
+        /**
+         * Kept on screen this long after the hinge goes quiet. Long enough that pausing
+         * part-way through a fold holds the effect instead of dropping it, short enough
+         * that a frozen screenshot never becomes the phone.
+         */
+        private const val HOLD_MS = 1_500L
 
         /** Hard ceiling on one appearance of the overlay. */
-        private const val MAX_SHOW_MS = 6_000L
+        private const val MAX_SHOW_MS = 10_000L
 
         private const val FADE_MS = 280f
 
@@ -744,6 +766,12 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
 
         /** Relative aspect difference that counts as "this is a different screen". */
         private const val ASPECT_TOLERANCE = 0.04f
+
+        /** Openness below which the effect is unmistakably on screen. */
+        private const val ENGAGED_BELOW = 0.85f
+
+        /** Openness above which the device counts as flat again. */
+        private const val FLAT_ABOVE = 0.97f
 
         @Volatile
         var isRunning: Boolean = false
@@ -756,6 +784,10 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
 
         @Volatile
         var seenHingeAngle: Float = Float.NaN
+            private set
+
+        @Volatile
+        var seenOpenness: Float = Float.NaN
             private set
 
         @Volatile
@@ -781,6 +813,7 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
                 status = ""
                 seenHingeEvents = 0L
                 seenHingeAngle = Float.NaN
+                seenOpenness = Float.NaN
             }
             isRunning = value
             for (listener in listeners) listener(value)
