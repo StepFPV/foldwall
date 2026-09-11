@@ -25,10 +25,13 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -69,6 +72,10 @@ import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
 
+    // Re-read on every resume: the user leaves this screen to set the wallpaper and
+    // comes straight back, and a stale "not active yet" line would be wrong.
+    private val wallpaperActive = mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -78,10 +85,16 @@ class MainActivity : ComponentActivity() {
                     color = FoldWallColors.background,
                     contentColor = FoldWallColors.onBackground,
                 ) {
-                    FoldWallScreen()
+                    FoldWallScreen(wallpaperActive.value)
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        wallpaperActive.value =
+            WallpaperManager.getInstance(this).wallpaperInfo?.packageName == packageName
     }
 }
 
@@ -109,7 +122,7 @@ private val BACKGROUND_SWATCHES = listOf(
 ).map { it.toInt() }
 
 @Composable
-private fun FoldWallScreen() {
+private fun FoldWallScreen(wallpaperActive: Boolean) {
     val context = LocalContext.current
     var settings by remember { mutableStateOf(FoldSettings.load(context)) }
     var openness by remember { mutableFloatStateOf(1f) }
@@ -138,12 +151,13 @@ private fun FoldWallScreen() {
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .windowInsetsPadding(WindowInsets.systemBars)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
-            .padding(top = 44.dp, bottom = 40.dp),
+            .padding(top = 12.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Header(context)
+        Header(wallpaperActive)
 
         PreviewCard(
             settings = settings,
@@ -200,10 +214,7 @@ private fun FoldWallScreen() {
 // --- sections --------------------------------------------------------------------
 
 @Composable
-private fun Header(context: Context) {
-    val active = remember {
-        WallpaperManager.getInstance(context).wallpaperInfo?.packageName == context.packageName
-    }
+private fun Header(active: Boolean) {
     Column {
         Text(
             "FoldWall",

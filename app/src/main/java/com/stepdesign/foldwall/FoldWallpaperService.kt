@@ -45,8 +45,13 @@ class FoldWallpaperService : WallpaperService() {
         // an inline lambda would be collected, silently killing live updates.
         private val prefListener =
             SharedPreferences.OnSharedPreferenceChangeListener { prefs, _ ->
-                renderer.settings = FoldSettings.read(prefs)
-                requestFrame()
+                // One callback fires per changed key, and a settings save writes every
+                // key, so most of these are duplicates of a state we already hold.
+                val next = FoldSettings.read(prefs)
+                if (next != renderer.settings) {
+                    renderer.settings = next
+                    requestFrame()
+                }
             }
 
         override fun onCreate(holder: SurfaceHolder) {

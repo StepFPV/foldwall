@@ -97,6 +97,9 @@ assembleRelease`.
 
 ## Install
 
+A built APK is available at
+<https://step.prandi.net/portal/downloads/FoldWall.apk>, or build one yourself:
+
 ```bash
 adb install -r app-debug.apk
 ```
