@@ -85,15 +85,22 @@ the repository root, which is **not** in version control. Without it the release
 still runs and produces an unsigned APK.
 
 ```properties
-storeFile=../foldwall-release.jks
+storeFile=foldwall-release.jks
 storePassword=...
 keyAlias=foldwall
 keyPassword=...
 ```
 
-Create your own keystore with `keytool -genkeypair -v -keystore foldwall-release.jks
--keyalg RSA -keysize 4096 -validity 10000 -alias foldwall`, then `./gradlew
-assembleRelease`.
+`storeFile` is resolved against the repository root, so a bare filename means a
+`.jks` next to `keystore.properties`. There is a `keystore.properties.example` to
+copy. Create your own keystore with:
+
+```bash
+keytool -genkeypair -v -keystore foldwall-release.jks -storetype PKCS12 -keyalg RSA -keysize 4096 -validity 10000 -alias foldwall -dname "CN=FoldWall, O=FoldWall, C=IT"
+```
+
+PKCS12 requires the key password to equal the store password. Then
+`./gradlew assembleRelease`.
 
 ## Install
 
