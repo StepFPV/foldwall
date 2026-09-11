@@ -14,3 +14,6 @@ local.properties
 keystore.properties
 *.jks
 *.keystore
+
+# Signed build outputs stay local.
+*.apk
