@@ -13,21 +13,27 @@ import androidx.core.content.edit
  * something an app can discover ahead of time.
  */
 data class FoldSettings(
-    val effect: FoldEffect = FoldEffect.CREASE,
-    val amount: Float = 0.85f,
-    val maxBlur: Float = 34f,
+    // The defaults are the Duo look, because that is the thing the app exists to do.
+    // They used to be a gentle crease over 25–172°, which on a real Fold means a two-pixel
+    // blur at any angle the inner panel is actually lit for: indistinguishable from off.
+    val effect: FoldEffect = FoldEffect.DUO,
+    val amount: Float = 0f,
+    val maxBlur: Float = 72f,
     /** False: blur grows with the fold. True: it peaks half-open and clears at both ends. */
     val blurPeak: Boolean = false,
-    val dim: Float = 0.22f,
-    val desat: Float = 0.30f,
-    val chroma: Float = 0.15f,
+    val dim: Float = 0.62f,
+    val desat: Float = 0f,
+    val chroma: Float = 0f,
     val creaseWidth: Float = 0.10f,
     val tintColor: Int = 0xFF3A6FD8.toInt(),
     val tintAmount: Float = 0f,
     val glowColor: Int = 0xFF7FC6FF.toInt(),
-    val glowAmount: Float = 0.18f,
-    val angleMin: Float = 25f,
-    val angleMax: Float = 172f,
+    val glowAmount: Float = 0f,
+    // A Galaxy Fold lights the inner panel around 90°; below that the wallpaper is handed
+    // nothing. Starting there is a far better guess than 0–180, and the engine then
+    // learns the device's real window anyway.
+    val angleMin: Float = 90f,
+    val angleMax: Float = 175f,
     val invert: Boolean = false,
     val smoothing: Float = 14f,
     val debug: Boolean = false,
@@ -108,6 +114,18 @@ data class FoldSettings(
 
 /** Named starting points; each one only overrides the look, never the calibration. */
 enum class FoldPreset(val label: String, val apply: (FoldSettings) -> FoldSettings) {
+    /**
+     * Numbers taken from a reconstruction of the real transition: a 72px blur over the
+     * whole frame and a darkening strong enough to read as the panel going out, with
+     * nothing else — no crease, no tint, no aberration.
+     */
+    DUO("Duo", { s ->
+        s.copy(
+            effect = FoldEffect.DUO, amount = 0f, maxBlur = 72f, dim = 0.62f,
+            desat = 0f, chroma = 0f, creaseWidth = 0.10f, tintAmount = 0f,
+            glowAmount = 0f, blurPeak = false, invert = false,
+        )
+    }),
     ORIGINALE("Originale", { s ->
         s.copy(
             effect = FoldEffect.CREASE, amount = 0.85f, maxBlur = 34f, dim = 0.22f,

@@ -23,12 +23,12 @@ Real-device results will be added here once they exist.
 ## What it does
 
 `Sensor.TYPE_HINGE_ANGLE` (public Android API since API 30) drives a `RuntimeShader`
-that is applied to the wallpaper through a `RenderEffect` chain. Five distortion styles,
-all fully adjustable:
+that is applied through a `RenderEffect` chain. Six styles, all fully adjustable:
 
 | Effect | What it looks like |
 | --- | --- |
-| **Piega** (crease) | Shadow valley along the hinge with a lit edge either side. Closest to the original. |
+| **Duo** | The whole frame defocuses and dims as one and comes back sharp when flat. No crease, no warp — the *display* goes out of focus, not the wallpaper behind it. The default, and the closest to the real thing. |
+| **Piega** (crease) | Shadow valley along the hinge with a lit edge either side. |
 | **Vetro** (glass) | Lens refraction along the crease, like frosted glass bending. |
 | **Pagina** (page) | The right half curls onto a cylinder like a turning page, with a spine shadow. |
 | **Profondità** (depth) | No warp: zoom, vignette and blur only. The restrained one. |
@@ -38,7 +38,9 @@ Adjustable per effect: intensity, maximum blur, darkening, desaturation, chromat
 aberration, crease width, response speed, tint colour and amount, crease glow colour and
 amount, and an invert switch that moves the effect to the open end of the travel.
 
-Five presets (Originale, Soffice, Cinema, Libro, Neon) set a whole look at once.
+Six presets (Duo, Originale, Soffice, Cinema, Libro, Neon) set a whole look at once. `Duo` is
+built from a reconstruction of the real transition: a 72px blur over the whole frame and a
+darkening strong enough to read as the panel going out, with nothing else.
 
 Pick any photo as the wallpaper image, or leave it empty and use the built-in gradient
 with two configurable colours.

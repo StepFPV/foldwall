@@ -1,7 +1,7 @@
 package com.stepdesign.foldwall
 
 /**
- * The five distortion styles the wallpaper can run.
+ * The distortion styles the wallpaper can run.
  *
  * Every effect shares the same colour grading, crease glow and chromatic-aberration
  * stages; they differ only in how they warp the sampled coordinate and how they shade
@@ -14,6 +14,28 @@ enum class FoldEffect(
     val blurb: String,
     val agslBody: String,
 ) {
+    /**
+     * What Apple actually does, as far as it can be read off the transition: the whole
+     * frame goes out of focus and dims as one, and comes back sharp when the device is
+     * flat. No crease, no local band, no warp of the image — the *display* defocuses,
+     * not the wallpaper behind it. Everything here is left to the shared blur and
+     * grading stages; warp and shade deliberately do nothing.
+     */
+    DUO(
+        id = "duo",
+        label = "Duo",
+        blurb = "Tutto lo schermo va fuori fuoco e si scurisce insieme, senza piega. Il più vicino all'iPhone Duo.",
+        agslBody = """
+            float2 warp(float2 coord, float fold) {
+                return coord;
+            }
+
+            float3 shade(float3 rgb, float2 coord, float fold) {
+                return rgb;
+            }
+        """,
+    ),
+
     CREASE(
         id = "crease",
         label = "Piega",
@@ -165,6 +187,6 @@ enum class FoldEffect(
     ;
 
     companion object {
-        fun fromId(id: String?): FoldEffect = entries.firstOrNull { it.id == id } ?: CREASE
+        fun fromId(id: String?): FoldEffect = entries.firstOrNull { it.id == id } ?: DUO
     }
 }
