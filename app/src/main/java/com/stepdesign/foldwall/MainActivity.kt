@@ -84,6 +84,10 @@ class MainActivity : ComponentActivity() {
     // comes straight back, and a stale "not active yet" line would be wrong.
     private val wallpaperActive = mutableStateOf(false)
 
+    // Recorded by the wallpaper engine while it is on screen, so it only grows while the
+    // user is away from this screen. Re-read on resume rather than observed live.
+    private val observedRange = mutableStateOf<ClosedFloatingPointRange<Float>?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -93,7 +97,7 @@ class MainActivity : ComponentActivity() {
                     color = FoldWallColors.background,
                     contentColor = FoldWallColors.onBackground,
                 ) {
-                    FoldWallScreen(wallpaperActive.value)
+                    FoldWallScreen(wallpaperActive.value, observedRange.value)
                 }
             }
         }
@@ -103,6 +107,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         wallpaperActive.value =
             WallpaperManager.getInstance(this).wallpaperInfo?.packageName == packageName
+        observedRange.value = FoldObserved.read(this)
     }
 }
 
@@ -130,7 +135,10 @@ private val BACKGROUND_SWATCHES = listOf(
 ).map { it.toInt() }
 
 @Composable
-private fun FoldWallScreen(wallpaperActive: Boolean) {
+private fun FoldWallScreen(
+    wallpaperActive: Boolean,
+    observed: ClosedFloatingPointRange<Float>?,
+) {
     val context = LocalContext.current
     var settings by remember { mutableStateOf(FoldSettings.load(context)) }
     var openness by remember { mutableFloatStateOf(1f) }
@@ -288,6 +296,7 @@ private fun FoldWallScreen(wallpaperActive: Boolean) {
             settings = settings,
             rawAngle = rawAngle,
             hingeAvailable = hinge.available,
+            observed = observed,
             onChange = ::update,
         )
 
@@ -544,15 +553,24 @@ private fun CalibrationSection(
     settings: FoldSettings,
     rawAngle: Float,
     hingeAvailable: Boolean,
+    observed: ClosedFloatingPointRange<Float>?,
     onChange: (FoldSettings) -> Unit,
 ) {
     SectionCard("Calibrazione cerniera") {
         Text(
-            "L'intervallo di angoli che un live wallpaper riceve dipende da quando il " +
-                "sistema gli passa il pannello. Attiva la diagnostica, guarda i gradi " +
-                "reali mentre pieghi, poi stringi qui l'intervallo.",
+            "Il pannello interno si accende solo verso i 90°, e prima di allora lo sfondo " +
+                "non riceve niente: con l'intervallo largo l'effetto è già mezzo finito " +
+                "quando lo vedi. Imposta lo sfondo, apri e chiudi qualche volta, poi torna " +
+                "qui: FoldWall registra da solo l'intervallo che il tuo telefono gli dà.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        ObservedRangeRow(
+            observed = observed,
+            settings = settings,
+            onApply = { range ->
+                onChange(settings.copy(angleMin = range.start, angleMax = range.endInclusive))
+            },
         )
         LabeledSlider(
             label = "Angolo minimo (tutto effetto)",
@@ -584,6 +602,45 @@ private fun CalibrationSection(
             checked = settings.debug,
             onChange = { onChange(settings.copy(debug = it)) },
         )
+    }
+}
+
+@Composable
+private fun ObservedRangeRow(
+    observed: ClosedFloatingPointRange<Float>?,
+    settings: FoldSettings,
+    onApply: (ClosedFloatingPointRange<Float>) -> Unit,
+) {
+    val context = LocalContext.current
+    if (observed == null) {
+        Text(
+            "Nessun intervallo registrato ancora. Serve che FoldWall sia lo sfondo attivo " +
+                "e che tu apra e chiuda il telefono un paio di volte.",
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        return
+    }
+    val low = observed.start.roundToInt()
+    val high = observed.endInclusive.roundToInt()
+    val alreadyApplied = abs(settings.angleMin - observed.start) < 1f &&
+        abs(settings.angleMax - observed.endInclusive) < 1f
+    Text(
+        "Il tuo telefono ti dà da " + low + "° a " + high + "°.",
+        style = MaterialTheme.typography.bodySmall,
+        fontFamily = FontFamily.Monospace,
+        color = MaterialTheme.colorScheme.primary,
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Button(
+            onClick = { onApply(observed) },
+            enabled = !alreadyApplied,
+            modifier = Modifier.weight(1f),
+        ) {
+            Text(if (alreadyApplied) "Intervallo già applicato" else "Usa questo intervallo")
+        }
+        OutlinedButton(onClick = { FoldObserved.clear(context) }) { Text("Azzera") }
     }
 }
 

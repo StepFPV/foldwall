@@ -5,6 +5,8 @@ import android.graphics.RenderEffect
 import android.graphics.RuntimeShader
 import android.graphics.Shader
 import android.util.Log
+import kotlin.math.PI
+import kotlin.math.sin
 
 /**
  * Turns a [FoldSettings] plus an openness value into the [RenderEffect] that does the work.
@@ -41,7 +43,10 @@ class FoldEffectBuilder {
         // so it has to be rebuilt every frame or the animation freezes on frame one.
         val shaderEffect = RenderEffect.createRuntimeShaderEffect(shader, FoldShaders.INPUT_UNIFORM)
 
-        val blur = settings.maxBlur * fold
+        // Peaking half-way reads as an optical transition; growing monotonically reads as
+        // a wallpaper that is simply blurred while the phone is shut. Both are wanted.
+        val curve = if (settings.blurPeak) sin(fold * PI.toFloat()) else fold
+        val blur = settings.maxBlur * curve
         if (blur < MIN_BLUR_PX) return shaderEffect
 
         // CLAMP, otherwise the blur samples transparent past the edges and the border

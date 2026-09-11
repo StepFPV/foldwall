@@ -46,13 +46,20 @@ with two configurable colours.
 ## Why the calibration section exists
 
 The range of hinge angles a **live wallpaper** actually observes is not the full 0–180°.
-The engine only receives sensor events while its own panel is lit, and the moment the
-firmware hands the panel over is owned by SystemUI, not by the app. So the app does not
-guess: turn on **Diagnostica sullo sfondo**, fold the device, read the real degrees off
-the on-screen overlay, then set the min/max angles to match.
+The engine only receives sensor events while its own panel is lit, and the firmware lights
+the inner panel part-way through an unfold — on a Galaxy Fold around 90°. Mapped over
+0–180° the effect is therefore more than half finished before anyone can see it, which
+reads as an animation that arrives already over.
 
-The overlay reports sensor presence, raw angle, event count, computed openness, the
+So the app does not guess, and it does not make the user guess either: the engine records
+the span of angles it is actually given, and the settings screen offers that span back with
+a single button. A few folds are enough. The diagnostic overlay is still there for anyone
+who wants the raw numbers — sensor presence, angle, event count, computed openness, the
 configured range, the active effect and the surface size.
+
+`Sfocatura al massimo a metà apertura` changes the blur from growing with the fold to
+peaking half-open and clearing at both ends, which reads as an optical transition rather
+than a wallpaper that is simply blurred while the phone is shut.
 
 ## Full-screen mode (experimental)
 

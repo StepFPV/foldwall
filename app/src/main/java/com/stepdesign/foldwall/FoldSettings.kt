@@ -16,6 +16,8 @@ data class FoldSettings(
     val effect: FoldEffect = FoldEffect.CREASE,
     val amount: Float = 0.85f,
     val maxBlur: Float = 34f,
+    /** False: blur grows with the fold. True: it peaks half-open and clears at both ends. */
+    val blurPeak: Boolean = false,
     val dim: Float = 0.22f,
     val desat: Float = 0.30f,
     val chroma: Float = 0.15f,
@@ -57,6 +59,7 @@ data class FoldSettings(
                 effect = FoldEffect.fromId(p.getString("effect", d.effect.id)),
                 amount = p.getFloat("amount", d.amount),
                 maxBlur = p.getFloat("maxBlur", d.maxBlur),
+                blurPeak = p.getBoolean("blurPeak", d.blurPeak),
                 dim = p.getFloat("dim", d.dim),
                 desat = p.getFloat("desat", d.desat),
                 chroma = p.getFloat("chroma", d.chroma),
@@ -81,6 +84,7 @@ data class FoldSettings(
                 putString("effect", s.effect.id)
                 putFloat("amount", s.amount)
                 putFloat("maxBlur", s.maxBlur)
+                putBoolean("blurPeak", s.blurPeak)
                 putFloat("dim", s.dim)
                 putFloat("desat", s.desat)
                 putFloat("chroma", s.chroma)

@@ -117,6 +117,11 @@ class FoldWallpaperService : WallpaperService() {
         }
 
         private fun onHingeAngle(angle: Float) {
+            // Only while lit and only for the real wallpaper: the picker preview runs on
+            // whatever panel the settings screen happens to be on and would poison this.
+            if (visible && !isPreview) {
+                FoldObserved.record(this@FoldWallpaperService, angle)
+            }
             targetOpenness = renderer.settings.opennessFor(angle)
             if (firstSample) {
                 firstSample = false
