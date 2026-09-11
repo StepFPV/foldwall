@@ -95,7 +95,6 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
 
     private var lastAngle = Float.NaN
     private var hingeEvents = 0L
-    private var lastEventUptime = 0L
     /**
      * Hinge angle the device was resting at before the current gesture began, and the
      * baseline the trigger measures departure from.
@@ -303,6 +302,7 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         state = State.CAPTURING
         awaitingFrame = true
         captureRotation = displayRotation()
+        reportGeometry()
         Log.i(TAG, "fold started at " + lastAngle + "°, grabbing one frame")
         report("cattura in corso")
         main.postDelayed(captureTimeout, CAPTURE_TIMEOUT_MS)
@@ -465,6 +465,19 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
      */
     private fun frameTurn(): Int = (((captureRotation - displayRotation()) % 4) + 4) % 4 * 90
 
+    /**
+     * The geometry the rotation compensation turns on, written where the diagnostics card
+     * can show it: whether a panel hand-over moves the display rotation at all is the one
+     * thing that cannot be checked on a single-panel emulator.
+     */
+    private fun reportGeometry() {
+        val bounds = windowManager.currentWindowMetrics.bounds
+        seenGeometry = "" + bounds.width() + "x" + bounds.height() +
+            "  rot " + displayRotation() +
+            "  scatto " + captureRotation +
+            "  giro " + frameTurn() + "°"
+    }
+
     private fun showOverlay() {
         if (overlay != null) return
 
@@ -558,6 +571,7 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
                 Log.i(TAG, "display turned since capture, rotating frame by " + turn + "°")
                 view.frameRotation = turn
                 view.invalidate()
+                reportGeometry()
             }
         }
         val wanted = width.toFloat() / height
@@ -601,7 +615,6 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         val previous = lastAngle
         lastAngle = angle
         val now = SystemClock.uptimeMillis()
-        lastEventUptime = now
         if (previous.isNaN()) return
 
         val delta = abs(angle - previous)
@@ -615,7 +628,13 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         }
         val sinceLastMovement = now - lastMovementUptime
         lastMovementUptime = now
+        // A hinge does not turn cleanly. A slow fold is a run of small steps with the odd
+        // half degree back the other way, and reading every one of those as the end of the
+        // gesture strands the trigger exactly where a careful fold needs it. Only a step
+        // decisively the other way counts as turning back.
         val direction = if (angle > previous) 1 else -1
+        val reversed = lastDirection != 0 && direction != lastDirection && delta >= REVERSAL_DEG
+        if (lastDirection == 0 || delta >= REVERSAL_DEG) lastDirection = direction
 
         when (state) {
             State.IDLE -> {
@@ -631,7 +650,7 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
                 // other way, which no amount of slowness looks like. Long silence still
                 // re-anchors as a backstop, for a device left half-open for a while.
                 val newGesture = restAngle.isNaN() ||
-                    direction != lastDirection ||
+                    reversed ||
                     sinceLastMovement > REST_SILENCE_MS
                 if (newGesture) restAngle = previous
                 // Nothing to show at a flat device, and arming here would ping-pong:
@@ -643,7 +662,6 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
             State.SHOWING -> requestFrame()
             State.CAPTURING -> Unit
         }
-        lastDirection = direction
     }
 
     override fun doFrame(frameTimeNanos: Long) {
@@ -803,9 +821,9 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
 
         private const val MAX_IMAGES = 2
         /**
-         * How long to wait for the one frame. 600ms was measured on an emulator where the
-         * capture lands in ~80ms; a real device un-parking a mirror under load is slower,
-         * and giving up early is why the effect sometimes simply did not appear.
+         * How long to wait for the one frame. 600ms was measured against an emulator that
+         * lands a capture in ~80ms, which left no headroom for a real device un-parking a
+         * mirror under load.
          */
         private const val CAPTURE_TIMEOUT_MS = 1_500L
 
@@ -824,6 +842,9 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
          * and anything tighter mistakes a careful fold for a finished one.
          */
         private const val REST_SILENCE_MS = 2_000L
+
+        /** Step back the other way that ends a gesture, rather than being hinge wobble. */
+        private const val REVERSAL_DEG = 2f
 
         /**
          * Kept on screen this long after the hinge goes quiet. Long enough that pausing
@@ -869,6 +890,10 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
             private set
 
         @Volatile
+        var seenGeometry: String = ""
+            private set
+
+        @Volatile
         var status: String = ""
             private set
 
@@ -892,6 +917,7 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
                 seenHingeEvents = 0L
                 seenHingeAngle = Float.NaN
                 seenOpenness = Float.NaN
+                seenGeometry = ""
             }
             isRunning = value
             for (listener in listeners) listener(value)

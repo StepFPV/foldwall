@@ -740,6 +740,7 @@ private fun OverlayDiagnostics() {
     val angle = OverlayFoldService.seenHingeAngle
     val openness = OverlayFoldService.seenOpenness
     val status = OverlayFoldService.status
+    val geometry = OverlayFoldService.seenGeometry
     @Suppress("UNUSED_EXPRESSION")
     tick
     Text(
@@ -754,6 +755,9 @@ private fun OverlayDiagnostics() {
                     .append(String.format(Locale.US, "%.2f", openness))
                     .append("   sfocatura ")
                     .append((72f * (1f - openness)).toInt()).append(" px")
+            }
+            if (geometry.isNotEmpty()) {
+                append('\n').append("schermo  ").append(geometry)
             }
         },
         style = MaterialTheme.typography.bodySmall,
