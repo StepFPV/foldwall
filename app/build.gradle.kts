@@ -24,8 +24,8 @@ android {
         // RuntimeShader (AGSL) is public API from 33; the whole app is built around it.
         minSdk = 33
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 4
+        versionName = "1.3"
     }
 
     signingConfigs {

@@ -57,7 +57,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,6 +75,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.delay
 import java.io.File
 import java.util.Locale
 import kotlin.math.abs
@@ -88,6 +91,10 @@ class MainActivity : ComponentActivity() {
     // user is away from this screen. Re-read on resume rather than observed live.
     private val observedRange = mutableStateOf<ClosedFloatingPointRange<Float>?>(null)
 
+    // The one step that fails silently: granted in Settings, then the user comes back and
+    // has to press again. Re-read on resume so the button can say so.
+    private val canOverlay = mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -97,7 +104,7 @@ class MainActivity : ComponentActivity() {
                     color = FoldWallColors.background,
                     contentColor = FoldWallColors.onBackground,
                 ) {
-                    FoldWallScreen(wallpaperActive.value, observedRange.value)
+                    FoldWallScreen(wallpaperActive.value, observedRange.value, canOverlay.value)
                 }
             }
         }
@@ -108,6 +115,7 @@ class MainActivity : ComponentActivity() {
         wallpaperActive.value =
             WallpaperManager.getInstance(this).wallpaperInfo?.packageName == packageName
         observedRange.value = FoldObserved.read(this)
+        canOverlay.value = Settings.canDrawOverlays(this)
     }
 }
 
@@ -138,6 +146,7 @@ private val BACKGROUND_SWATCHES = listOf(
 private fun FoldWallScreen(
     wallpaperActive: Boolean,
     observed: ClosedFloatingPointRange<Float>?,
+    canOverlay: Boolean,
 ) {
     val context = LocalContext.current
     var settings by remember { mutableStateOf(FoldSettings.load(context)) }
@@ -218,11 +227,6 @@ private fun FoldWallScreen(
             return
         }
         if (!Settings.canDrawOverlays(context)) {
-            Toast.makeText(
-                context,
-                "Serve il permesso \"Mostra sopra altre app\", poi torna qui",
-                Toast.LENGTH_LONG,
-            ).show()
             overlayPermissionLauncher.launch(
                 Intent(
                     Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -253,6 +257,13 @@ private fun FoldWallScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Header(wallpaperActive)
+
+        OverlaySection(
+            running = overlayRunning,
+            canOverlay = canOverlay,
+            onToggle = ::toggleOverlay,
+            onTest = { OverlayFoldService.test(context) },
+        )
 
         PreviewCard(
             settings = settings,
@@ -299,8 +310,6 @@ private fun FoldWallScreen(
             observed = observed,
             onChange = ::update,
         )
-
-        OverlaySection(running = overlayRunning, onToggle = ::toggleOverlay)
 
         ActionSection(
             onApply = { applyWallpaper(context) },
@@ -645,39 +654,105 @@ private fun ObservedRangeRow(
 }
 
 @Composable
-private fun OverlaySection(running: Boolean, onToggle: (Boolean) -> Unit) {
-    SectionCard("Effetto su tutto lo schermo (sperimentale)") {
+private fun OverlaySection(
+    running: Boolean,
+    canOverlay: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onTest: () -> Unit,
+) {
+    SectionCard("Effetto su tutto lo schermo") {
         Text(
-            "Lo sfondo vero reagisce sempre, ma solo dietro le app. Questa modalità va " +
-                "oltre: quando inizi a piegare, FoldWall fotografa lo schermo una volta, " +
-                "ci applica l'effetto sopra a tutto, e sparisce appena la cerniera si " +
-                "ferma. È un'illusione, non la transizione di sistema: quella la può " +
-                "fare solo Samsung.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            "Questa \u00e8 la modalit\u00e0 che fa quello che fa l'iPhone Duo: quando pieghi, " +
+                "tutto lo schermo va fuori fuoco e si scurisce \u2014 le app, le icone, tutto \u2014 " +
+                "e torna nitido quando ti fermi. Non c'entra niente con lo sfondo: puoi " +
+                "tenere il tuo.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
         )
-        ToggleRow(label = "Attiva modalità schermo intero", checked = running, onChange = onToggle)
-        Text(
-            "Cosa comporta:\n" +
-                "• Android chiede il consenso alla registrazione schermo ogni volta che " +
-                "l'attivi, e resta acceso l'indicatore di registrazione.\n" +
-                "• Mentre l'effetto è a video i tocchi non passano: tocca lo schermo per " +
-                "farlo sparire subito.\n" +
-                "• Le app che vietano gli screenshot (banca, video protetti, password " +
-                "manager) vengono catturate nere: lì l'effetto non si vede.\n" +
-                "• La barra di stato resta sopra l'effetto.\n" +
-                "• Si spegne da sola quando chiudi l'app dai recenti o riavvii.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+
         if (running) {
+            Button(onClick = { onToggle(false) }, modifier = Modifier.fillMaxWidth()) {
+                Text("Spegni")
+            }
+            OutlinedButton(onClick = onTest, modifier = Modifier.fillMaxWidth()) {
+                Text("Prova adesso (senza piegare)")
+            }
+            OverlayDiagnostics()
+        } else if (!canOverlay) {
+            Button(onClick = { onToggle(true) }, modifier = Modifier.fillMaxWidth()) {
+                Text("1. Concedi \"Mostra sopra altre app\"")
+            }
             Text(
-                "Attiva. La fotografia dello schermo viene presa solo nell'istante in cui " +
-                    "pieghi: a riposo non registra niente.",
+                "Android apre le impostazioni. Dai il permesso, poi torna qui: comparir\u00e0 " +
+                    "il pulsante per accendere.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Button(onClick = { onToggle(true) }, modifier = Modifier.fillMaxWidth()) {
+                Text("2. Accendi l'effetto a schermo intero")
+            }
+            Text(
+                "Android chieder\u00e0 il consenso alla registrazione schermo: scegli " +
+                    "\"Schermo intero\" e premi Avvia. Se non vedi quella richiesta, " +
+                    "l'effetto non \u00e8 acceso.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+
+        Text(
+            "Cosa comporta:\n" +
+                "\u2022 Resta acceso l'indicatore di registrazione, e una notifica di FoldWall.\n" +
+                "\u2022 Mentre l'effetto \u00e8 a video i tocchi non passano: tocca lo schermo per " +
+                "farlo sparire subito.\n" +
+                "\u2022 Le app che vietano gli screenshot (banca, video protetti, password " +
+                "manager) vengono catturate nere.\n" +
+                "\u2022 La barra di stato resta sopra l'effetto.\n" +
+                "\u2022 Si spegne da sola se chiudi l'app dai recenti o riavvii.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** Live read-out of what the service is doing, so "non succede niente" can be diagnosed. */
+@Composable
+private fun OverlayDiagnostics() {
+    var tick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(400)
+            tick++
+        }
+    }
+    val events = OverlayFoldService.seenHingeEvents
+    val angle = OverlayFoldService.seenHingeAngle
+    val status = OverlayFoldService.status
+    @Suppress("UNUSED_EXPRESSION")
+    tick
+    Text(
+        text = buildString {
+            append("stato    ").append(status.ifEmpty { "-" }).append('\n')
+            append("cerniera ").append(events).append(" eventi")
+            if (!angle.isNaN()) {
+                append("  ultimo ").append(String.format(Locale.US, "%.1f", angle)).append('\u00b0')
+            }
+        },
+        style = MaterialTheme.typography.bodySmall,
+        fontFamily = FontFamily.Monospace,
+        color = if (events == 0L) {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        } else {
+            MaterialTheme.colorScheme.primary
+        },
+    )
+    if (events == 0L) {
+        Text(
+            "Nessun evento cerniera ricevuto: il sensore non sta arrivando al servizio.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

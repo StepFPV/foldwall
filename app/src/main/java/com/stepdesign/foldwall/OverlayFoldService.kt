@@ -97,6 +97,10 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
     private var shownAtUptime = 0L
     private var fadeStartUptime = 0L
 
+    /** Set while the "try it now" sweep is driving the effect instead of the hinge. */
+    private var testSweepStart = 0L
+    private var testPending = false
+
     private val prefListener =
         SharedPreferences.OnSharedPreferenceChangeListener { prefs, _ ->
             val next = FoldSettings.read(prefs)
@@ -127,6 +131,10 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             stopSelf()
+            return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_TEST) {
+            startTest()
             return START_NOT_STICKY
         }
         if (projection != null) return START_NOT_STICKY
@@ -186,6 +194,7 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         hinge = source
         source.start()
 
+        report("in attesa della cerniera")
         setRunning(true)
         Log.i(TAG, "overlay mode running, capture " + captureWidth + "x" + captureHeight)
         return START_NOT_STICKY
@@ -280,6 +289,7 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         state = State.CAPTURING
         awaitingFrame = true
         Log.i(TAG, "fold started at " + lastAngle + "°, grabbing one frame")
+        report("cattura in corso")
         main.postDelayed(captureTimeout, CAPTURE_TIMEOUT_MS)
 
         val (w, h) = captureSize()
@@ -309,6 +319,7 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
     private val captureTimeout = Runnable {
         if (state != State.CAPTURING) return@Runnable
         Log.w(TAG, "no frame arrived in time, staying out of the way")
+        report("cattura fallita: nessun fotogramma")
         awaitingFrame = false
         parkDisplay()
         state = State.IDLE
@@ -396,6 +407,7 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         if (state != State.CAPTURING) return
 
         Log.i(TAG, "frame captured " + bitmap.width + "x" + bitmap.height)
+        report("fotogramma " + bitmap.width + "x" + bitmap.height)
         frame = bitmap
         showOverlay()
         if (overlay == null) return
@@ -406,6 +418,8 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         lastMovementUptime = now
         fadeStartUptime = 0L
         lastFrameNanos = 0L
+        testSweepStart = if (testPending) now else 0L
+        testPending = false
         // The frozen frame is already the current state of the fold, so start there
         // instead of easing in from wherever the previous run finished.
         currentOpenness = targetOpenness
@@ -452,6 +466,7 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         } catch (e: Exception) {
             // Permission revoked while running, or the window manager refused the type.
             Log.e(TAG, "cannot show the overlay", e)
+            report("finestra rifiutata: " + e.javaClass.simpleName)
             state = State.IDLE
             frame = null
             return
@@ -459,6 +474,7 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         overlay = view
         overlayParams = params
         Log.i(TAG, "overlay window added")
+        report("effetto a video")
     }
 
     private fun teardownOverlay() {
@@ -466,6 +482,8 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         main.removeCallbacks(captureTimeout)
         awaitingFrame = false
         parkDisplay()
+        testSweepStart = 0L
+        testPending = false
         val view = overlay
         overlay = null
         overlayParams = null
@@ -482,6 +500,7 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         state = State.IDLE
         travelSinceIdle = 0f
         fadeStartUptime = 0L
+        report("in attesa della cerniera")
     }
 
     /**
@@ -518,6 +537,8 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
     private fun onHingeAngle(angle: Float) {
         targetOpenness = settings.opennessFor(angle)
         hingeEvents++
+        seenHingeEvents = hingeEvents
+        seenHingeAngle = angle
         if (hingeEvents == 1L) Log.i(TAG, "first hinge event at " + angle + "°")
 
         val previous = lastAngle
@@ -557,21 +578,37 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         }
         lastFrameNanos = frameTimeNanos
 
-        val delta = targetOpenness - currentOpenness
-        val settled = abs(delta) < SETTLE_EPSILON
-        if (settled) {
-            currentOpenness = targetOpenness
+        val now = SystemClock.uptimeMillis()
+
+        val settled: Boolean
+        if (testSweepStart != 0L) {
+            // Open -> shut -> open on a clock, so the effect can show itself on a device
+            // that is lying flat on a desk.
+            val t = ((now - testSweepStart).toFloat() / TEST_SWEEP_MS).coerceIn(0f, 1f)
+            val tri = if (t < 0.5f) t * 2f else (1f - t) * 2f
+            currentOpenness = 1f - tri
+            settled = false
+            if (t >= 1f) {
+                testSweepStart = 0L
+                beginFade()
+            }
         } else {
-            val rate = settings.smoothing.coerceIn(2f, 40f)
-            currentOpenness += delta * (1f - exp(-dt * rate))
+            val delta = targetOpenness - currentOpenness
+            settled = abs(delta) < SETTLE_EPSILON
+            if (settled) {
+                currentOpenness = targetOpenness
+            } else {
+                val rate = settings.smoothing.coerceIn(2f, 40f)
+                currentOpenness += delta * (1f - exp(-dt * rate))
+            }
         }
 
-        val now = SystemClock.uptimeMillis()
         val quietFor = now - lastMovementUptime
         // The hard cap is the safety valve: a sensor that stops reporting must not leave
         // a frozen screenshot glued over the phone.
-        val expired = now - shownAtUptime > MAX_SHOW_MS
-        if (expired || (settled && quietFor > HOLD_MS)) beginFade()
+        val cap = MAX_SHOW_MS + if (testSweepStart != 0L) TEST_SWEEP_MS.toLong() else 0L
+        val expired = now - shownAtUptime > cap
+        if (expired || (testSweepStart == 0L && settled && quietFor > HOLD_MS)) beginFade()
 
         if (fadeStartUptime != 0L) {
             val t = ((now - fadeStartUptime).toFloat() / FADE_MS).coerceIn(0f, 1f)
@@ -584,6 +621,19 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
 
         renderFrame()
         requestFrame()
+    }
+
+    /**
+     * Runs the whole pipeline on demand, with the openness swept by a clock instead of
+     * the hinge. The point is diagnostic: if this shows the effect, capture and overlay
+     * are fine and only the hinge trigger is in question.
+     */
+    private fun startTest() {
+        if (projection == null) return
+        if (state != State.IDLE) teardownOverlay()
+        testPending = true
+        report("prova in corso")
+        requestCapture()
     }
 
     private fun beginFade() {
@@ -657,6 +707,7 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
         private const val TAG = "FoldWall"
 
         private const val ACTION_STOP = "com.stepdesign.foldwall.OVERLAY_STOP"
+        private const val ACTION_TEST = "com.stepdesign.foldwall.OVERLAY_TEST"
         private const val EXTRA_RESULT_CODE = "resultCode"
         private const val EXTRA_DATA = "data"
 
@@ -688,11 +739,27 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
 
         private const val SETTLE_EPSILON = 0.0008f
 
+        /** Length of one open-shut-open cycle of the on-demand test. */
+        private const val TEST_SWEEP_MS = 2600f
+
         /** Relative aspect difference that counts as "this is a different screen". */
         private const val ASPECT_TOLERANCE = 0.04f
 
         @Volatile
         var isRunning: Boolean = false
+            private set
+
+        /** Read by the settings screen so the user can see what the service is doing. */
+        @Volatile
+        var seenHingeEvents: Long = 0L
+            private set
+
+        @Volatile
+        var seenHingeAngle: Float = Float.NaN
+            private set
+
+        @Volatile
+        var status: String = ""
             private set
 
         private val listeners = CopyOnWriteArrayList<(Boolean) -> Unit>()
@@ -705,7 +772,16 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
             listeners.remove(listener)
         }
 
+        private fun report(text: String) {
+            status = text
+        }
+
         private fun setRunning(value: Boolean) {
+            if (!value) {
+                status = ""
+                seenHingeEvents = 0L
+                seenHingeAngle = Float.NaN
+            }
             isRunning = value
             for (listener in listeners) listener(value)
         }
@@ -715,6 +791,12 @@ class OverlayFoldService : Service(), Choreographer.FrameCallback {
                 .putExtra(EXTRA_RESULT_CODE, resultCode)
                 .putExtra(EXTRA_DATA, data)
             context.startForegroundService(intent)
+        }
+
+        fun test(context: Context) {
+            context.startService(
+                Intent(context, OverlayFoldService::class.java).setAction(ACTION_TEST),
+            )
         }
 
         fun stop(context: Context) {
