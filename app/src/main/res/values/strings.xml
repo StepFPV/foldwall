@@ -4,4 +4,9 @@
     <string name="app_author">StepDesign</string>
     <string name="wallpaper_label">FoldWall</string>
     <string name="wallpaper_desc">Lo sfondo reagisce all\'angolo della cerniera: sfocatura, piega e colore cambiano mentre apri e chiudi il telefono.</string>
+
+    <string name="overlay_channel">Effetto a schermo intero</string>
+    <string name="overlay_notification_title">FoldWall — effetto a schermo intero</string>
+    <string name="overlay_notification_text">Pronto: l\'effetto parte quando pieghi il telefono.</string>
+    <string name="overlay_notification_stop">Ferma</string>
 </resources>

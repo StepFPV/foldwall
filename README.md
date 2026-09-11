@@ -54,16 +54,52 @@ the on-screen overlay, then set the min/max angles to match.
 The overlay reports sensor presence, raw angle, event count, computed openness, the
 configured range, the active effect and the surface size.
 
+## Full-screen mode (experimental)
+
+There is a second mode that runs the same effect over *everything*, not just the
+wallpaper. It is off by default and has its own switch in the app.
+
+How it works, and why it works that way:
+
+1. `MediaProjection` mirrors the display into a parked virtual display that produces
+   nothing while idle.
+2. When the hinge starts moving, the display is un-parked for exactly one frame, that
+   frame is turned into a bitmap, and the display is parked again.
+3. The frozen frame goes into a `TYPE_APPLICATION_OVERLAY` window with the shader applied
+   through `View.setRenderEffect`, driven by the live hinge angle.
+4. When the hinge settles the overlay fades out and the real screen is back.
+
+Capturing exactly one frame per fold is not an optimisation, it is the design. The virtual
+display mirrors display 0, which is where the overlay lives — a continuous mirror would
+feed the effect back into itself. It also sidesteps the Android 14 rule that a
+`MediaProjection` may be used for exactly one `createVirtualDisplay` call: the display is
+created once and gated with `VirtualDisplay.setSurface(null)`, which the platform treats
+like switching a screen off.
+
+What it costs, all of it visible to the user:
+
+- Android asks for screen-capture consent every time the mode is switched on, and the
+  recording indicator stays lit.
+- The overlay window is **touchable**. An untrusted overlay that lets touches through is
+  capped at 80% opacity by the platform's anti-tapjacking rule, and at 80% the frozen
+  frame blends with the live screen and reads as a rendering fault. So it takes the taps
+  instead — and a tap dismisses it immediately.
+- Apps that set `FLAG_SECURE` (banking, DRM video, password managers) are captured black.
+- The status bar stays above the overlay.
+- The mode dies with the process: after a reboot or a swipe from recents it is off until
+  the user consents again.
+
 ## What this can and cannot do
 
 **It can**: react to the hinge behind the real launcher, continuously, as a normal
-wallpaper — no root, no ADB tricks, no special permissions.
+wallpaper — no root, no ADB tricks, no special permissions. With the experimental mode on,
+it can also paint the effect over other apps for the duration of a fold.
 
 **It cannot**: reproduce the system-level unfold transition. A third-party app cannot
 touch SystemUI's display handover, and there is a brief black/snapshot gap during the
-physical panel swap that belongs to the system. The effect is therefore two halves
-stitched around a gap the app does not control. Only the OEM (or a rooted SystemUI hook)
-can do the authentic version.
+physical panel swap that belongs to the system. The full-screen mode is an illusion built
+from a screenshot, not that transition. Only the OEM (or a rooted SystemUI hook) can do
+the authentic version.
 
 Cover-screen support is not implemented in v1.
 
@@ -118,12 +154,15 @@ Settings → Wallpaper → Live wallpapers.
 
 | File | Role |
 | --- | --- |
-| `FoldRenderer.kt` | `HardwareRenderer` + two `RenderNode`s. The image is recorded once; only the `RenderEffect` is rebuilt per frame. |
 | `FoldShaders.kt` | Shared AGSL prelude/epilogue: chromatic aberration, crease glow, colour grading. |
 | `FoldEffect.kt` | One `warp()` / `shade()` pair per effect, spliced into the shared scaffolding. |
+| `FoldEffectBuilder.kt` | Settings + openness → `RenderEffect`. The one place the effect is defined, shared by both hosts. |
+| `FoldRenderer.kt` | `HardwareRenderer` + two `RenderNode`s, for the wallpaper and the in-app preview. |
 | `HingeSource.kt` | `SensorManager` wrapper over `TYPE_HINGE_ANGLE`. |
 | `FoldWallpaperService.kt` | The wallpaper engine. Draws only while visible *and* while the angle is still moving. |
 | `FoldPreviewView.kt` | The same renderer on a `SurfaceView`, so the settings screen previews the real thing. |
+| `OverlayFoldService.kt` | The experimental full-screen mode: capture one frame, show it, drop it. |
+| `FoldOverlayView.kt` | The overlay's content — a plain `View` with `setRenderEffect` over the frozen frame. |
 
 Two details worth knowing if you fork this:
 
@@ -131,6 +170,9 @@ Two details worth knowing if you fork this:
   every frame. Calling `setFloatUniform` on the shader afterwards changes nothing.
 - The blur uses `RenderEffect.createBlurEffect(..., Shader.TileMode.CLAMP)`. Without
   CLAMP the edges of the wallpaper fade to transparent.
+- The overlay renders through a plain `View` with `setRenderEffect` rather than a
+  `SurfaceView`. The effect then lives inside the window's own rendering: no second
+  composited layer, no surface lifecycle to keep in step with the window's.
 
 ## Licence
 

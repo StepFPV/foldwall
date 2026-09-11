@@ -9,6 +9,13 @@
         android:name="android.hardware.sensor.hinge_angle"
         android:required="false" />
 
+    <!-- All four are only used by the experimental full-screen mode, which stays off
+         until the user turns it on and grants screen capture explicitly. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -43,5 +50,10 @@
                 android:name="android.service.wallpaper"
                 android:resource="@xml/fold_wallpaper" />
         </service>
+
+        <service
+            android:name=".OverlayFoldService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
     </application>
 </manifest>

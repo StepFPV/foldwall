@@ -1,12 +1,19 @@
 package com.stepdesign.foldwall
 
+import android.Manifest
+import android.app.Activity
 import android.app.WallpaperManager
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.projection.MediaProjectionConfig
+import android.media.projection.MediaProjectionManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -65,6 +72,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import java.io.File
 import java.util.Locale
 import kotlin.math.abs
@@ -147,6 +155,85 @@ private fun FoldWallScreen(wallpaperActive: Boolean) {
         onDispose { hinge.stop() }
     }
 
+    // The service can also stop itself — the user revokes capture from the system chip,
+    // or another app takes the projection — so the switch follows the service, not a pref.
+    var overlayRunning by remember { mutableStateOf(OverlayFoldService.isRunning) }
+    DisposableEffect(Unit) {
+        val listener: (Boolean) -> Unit = { overlayRunning = it }
+        OverlayFoldService.addListener(listener)
+        onDispose { OverlayFoldService.removeListener(listener) }
+    }
+
+    val captureLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val data = result.data
+        if (result.resultCode == Activity.RESULT_OK && data != null) {
+            OverlayFoldService.start(context, result.resultCode, data)
+        } else {
+            Toast.makeText(context, "Registrazione schermo non autorizzata", Toast.LENGTH_SHORT)
+                .show()
+        }
+    }
+
+    fun askForCapture() {
+        val manager = context.getSystemService(MediaProjectionManager::class.java)
+        if (manager == null) {
+            Toast.makeText(context, "Cattura schermo non disponibile", Toast.LENGTH_SHORT).show()
+            return
+        }
+        // From API 34 the consent dialog also offers "a single app". That would fill the
+        // full-screen overlay with one app's window, so pin the choice to the display.
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            manager.createScreenCaptureIntent(
+                MediaProjectionConfig.createConfigForDefaultDisplay(),
+            )
+        } else {
+            manager.createScreenCaptureIntent()
+        }
+        captureLauncher.launch(intent)
+    }
+
+    // Chained rather than fired together: two system dialogs stacked on top of each other
+    // is how a user ends up dismissing the one that mattered.
+    val notificationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { askForCapture() }
+
+    val overlayPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { }
+
+    fun toggleOverlay(wanted: Boolean) {
+        if (!wanted) {
+            OverlayFoldService.stop(context)
+            return
+        }
+        if (!Settings.canDrawOverlays(context)) {
+            Toast.makeText(
+                context,
+                "Serve il permesso \"Mostra sopra altre app\", poi torna qui",
+                Toast.LENGTH_LONG,
+            ).show()
+            overlayPermissionLauncher.launch(
+                Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + context.packageName),
+                ),
+            )
+            return
+        }
+        val notificationsGranted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (notificationsGranted) {
+            askForCapture()
+        } else {
+            notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -203,6 +290,8 @@ private fun FoldWallScreen(wallpaperActive: Boolean) {
             hingeAvailable = hinge.available,
             onChange = ::update,
         )
+
+        OverlaySection(running = overlayRunning, onToggle = ::toggleOverlay)
 
         ActionSection(
             onApply = { applyWallpaper(context) },
@@ -495,6 +584,43 @@ private fun CalibrationSection(
             checked = settings.debug,
             onChange = { onChange(settings.copy(debug = it)) },
         )
+    }
+}
+
+@Composable
+private fun OverlaySection(running: Boolean, onToggle: (Boolean) -> Unit) {
+    SectionCard("Effetto su tutto lo schermo (sperimentale)") {
+        Text(
+            "Lo sfondo vero reagisce sempre, ma solo dietro le app. Questa modalità va " +
+                "oltre: quando inizi a piegare, FoldWall fotografa lo schermo una volta, " +
+                "ci applica l'effetto sopra a tutto, e sparisce appena la cerniera si " +
+                "ferma. È un'illusione, non la transizione di sistema: quella la può " +
+                "fare solo Samsung.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        ToggleRow(label = "Attiva modalità schermo intero", checked = running, onChange = onToggle)
+        Text(
+            "Cosa comporta:\n" +
+                "• Android chiede il consenso alla registrazione schermo ogni volta che " +
+                "l'attivi, e resta acceso l'indicatore di registrazione.\n" +
+                "• Mentre l'effetto è a video i tocchi non passano: tocca lo schermo per " +
+                "farlo sparire subito.\n" +
+                "• Le app che vietano gli screenshot (banca, video protetti, password " +
+                "manager) vengono catturate nere: lì l'effetto non si vede.\n" +
+                "• La barra di stato resta sopra l'effetto.\n" +
+                "• Si spegne da sola quando chiudi l'app dai recenti o riavvii.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (running) {
+            Text(
+                "Attiva. La fotografia dello schermo viene presa solo nell'istante in cui " +
+                    "pieghi: a riposo non registra niente.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
     }
 }
 
