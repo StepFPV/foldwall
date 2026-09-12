@@ -54,10 +54,45 @@ data class FoldSettings(
     companion object {
         private const val PREFS = "foldwall_settings"
 
+        /**
+         * Bumped whenever the defaults change in a way an existing install has to adopt.
+         *
+         * Stored settings win over defaults key by key, which is right for anything the user
+         * picked and wrong for everything they did not. Without this, every look default
+         * changed after someone's first run was dead on their phone: they kept the crease and
+         * the two-pixel blur the app shipped with on the day they installed it, while the app
+         * went on claiming the defaults were the Duo look. That is exactly what happened
+         * between v1.0 and v1.5.
+         */
+        private const val SCHEMA = 2
+
         fun prefs(context: Context): SharedPreferences =
             context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-        fun load(context: Context): FoldSettings = read(prefs(context))
+        /** True when [load] has just moved an older install onto the current look. */
+        @Volatile
+        var migrated: Boolean = false
+            private set
+
+        fun load(context: Context): FoldSettings {
+            val p = prefs(context)
+            if (!p.contains("effect") || p.getInt("schema", 1) >= SCHEMA) return read(p)
+
+            val carried = read(p)
+            // Keep what the user chose for themselves — their picture, their background, how
+            // closely it follows the hinge — and adopt the look, which they never chose.
+            val moved = FoldSettings(
+                imagePath = carried.imagePath,
+                bgTop = carried.bgTop,
+                bgBottom = carried.bgBottom,
+                smoothing = carried.smoothing,
+                invert = carried.invert,
+                debug = carried.debug,
+            )
+            save(context, moved)
+            migrated = true
+            return moved
+        }
 
         fun read(p: SharedPreferences): FoldSettings {
             val d = FoldSettings()
@@ -87,6 +122,7 @@ data class FoldSettings(
 
         fun save(context: Context, s: FoldSettings) {
             prefs(context).edit {
+                putInt("schema", SCHEMA)
                 putString("effect", s.effect.id)
                 putFloat("amount", s.amount)
                 putFloat("maxBlur", s.maxBlur)

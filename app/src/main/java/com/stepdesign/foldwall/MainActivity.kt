@@ -258,6 +258,26 @@ private fun FoldWallScreen(
     ) {
         Header(wallpaperActive)
 
+        if (FoldSettings.migrated) {
+            Text(
+                "Le tue impostazioni venivano da una versione precedente e tenevano " +
+                    "l'aspetto di allora: effetto \"Piega\", con la valle d'ombra in mezzo " +
+                    "allo schermo, e una sfocatura troppo debole per vedersi. Le ho " +
+                    "riportate all'aspetto Duo. La tua immagine e i tuoi colori di sfondo " +
+                    "sono rimasti quelli.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        1.dp,
+                        MaterialTheme.colorScheme.primary,
+                        RoundedCornerShape(10.dp),
+                    )
+                    .padding(12.dp),
+            )
+        }
+
         OverlaySection(
             running = overlayRunning,
             canOverlay = canOverlay,
