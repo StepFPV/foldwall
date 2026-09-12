@@ -265,6 +265,8 @@ private fun FoldWallScreen(
             onTest = { OverlayFoldService.test(context) },
         )
 
+        LiveBlurSection(canOverlay = canOverlay)
+
         PreviewCard(
             settings = settings,
             openness = openness,
@@ -723,6 +725,59 @@ private fun OverlaySection(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/**
+ * One question, one button: does this phone's compositor blur the live screen on request?
+ *
+ * Everything else in the app blurs a screenshot. If the answer here is yes, the effect can be
+ * rebuilt without capturing anything at all — see [LiveBlurProbe] for why that is better.
+ */
+@Composable
+private fun LiveBlurSection(canOverlay: Boolean) {
+    val context = LocalContext.current
+    var result by remember { mutableStateOf("") }
+
+    SectionCard("Prova: sfocare il display, non una fotografia") {
+        Text(
+            "L'effetto qui sopra congela una fotografia dello schermo e sfoca quella. " +
+                "Questa prova chiede invece al sistema di sfocare lo schermo vero, mentre " +
+                "continua a vivere: niente cattura, quindi nessun consenso alla " +
+                "registrazione, nessun pallino di registrazione, e le app che vietano gli " +
+                "screenshot si sfocano invece di diventare nere.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            "Funziona sull'emulatore. Se One UI la concede non lo so, e il modo di " +
+                "saperlo è provarla: premi, e guarda se lo schermo va fuori fuoco — " +
+                "icone e app comprese, non solo lo sfondo. Durante la prova puoi premere " +
+                "Home: la sfocatura resta, così la vedi sulla schermata principale.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedButton(
+            onClick = { LiveBlurProbe.run(context) { result = it } },
+            enabled = canOverlay,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Prova sfocatura live (6 s)")
+        }
+        if (!canOverlay) {
+            Text(
+                "Serve prima il permesso \"Mostra sopra altre app\" della sezione qui sopra.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (result.isNotEmpty()) {
+            Text(
+                result,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
     }
 }
 
