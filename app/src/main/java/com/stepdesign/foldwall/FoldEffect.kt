@@ -24,7 +24,7 @@ enum class FoldEffect(
     DUO(
         id = "duo",
         label = "Duo",
-        blurb = "Tutto lo schermo va fuori fuoco e si scurisce insieme, senza piega. Il più vicino all'iPhone Duo.",
+        blurb = "Tutto lo schermo va fuori fuoco e si scurisce insieme, uniforme, senza piega.",
         agslBody = """
             float2 warp(float2 coord, float fold) {
                 return coord;

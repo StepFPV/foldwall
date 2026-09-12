@@ -27,7 +27,7 @@ that is applied through a `RenderEffect` chain. Six styles, all fully adjustable
 
 | Effect | What it looks like |
 | --- | --- |
-| **Duo** | The whole frame defocuses and dims as one and comes back sharp when flat. No crease, no warp — the *display* goes out of focus, not the wallpaper behind it. The default, and the closest to the real thing. |
+| **Duo** | The whole frame defocuses and dims as one and comes back sharp when flat. No crease, no warp — the *display* goes out of focus, not the wallpaper behind it. The default. Whether Apple's transition is shaped like this is unsettled: the reconstruction these numbers come from says a uniform blur, another says one half blurred with a gradient from the crease and the other sharp. |
 | **Piega** (crease) | Shadow valley along the hinge with a lit edge either side. |
 | **Vetro** (glass) | Lens refraction along the crease, like frosted glass bending. |
 | **Pagina** (page) | The right half curls onto a cylinder like a turning page, with a spine shadow. |

@@ -151,9 +151,13 @@ data class FoldSettings(
 /** Named starting points; each one only overrides the look, never the calibration. */
 enum class FoldPreset(val label: String, val apply: (FoldSettings) -> FoldSettings) {
     /**
-     * Numbers taken from a reconstruction of the real transition: a 72px blur over the
-     * whole frame and a darkening strong enough to read as the panel going out, with
-     * nothing else — no crease, no tint, no aberration.
+     * A 72px blur over the whole frame and a darkening strong enough to read as the panel
+     * going out, with nothing else — no crease, no tint, no aberration.
+     *
+     * The numbers come from a third-party reconstruction of Apple's transition, not from
+     * Apple's own footage, and a second reconstruction disagrees with it: that one blurs
+     * one half with a gradient from the crease outward and leaves the other sharp. Which
+     * is right is unsettled, so read this as one plausible shape rather than the shape.
      */
     DUO("Duo", { s ->
         s.copy(

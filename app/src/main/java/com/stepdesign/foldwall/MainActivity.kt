@@ -684,10 +684,12 @@ private fun OverlaySection(
 ) {
     SectionCard("Effetto su tutto lo schermo") {
         Text(
-            "Questa \u00e8 la modalit\u00e0 che fa quello che fa l'iPhone Duo: quando pieghi, " +
-                "tutto lo schermo va fuori fuoco e si scurisce \u2014 le app, le icone, tutto \u2014 " +
-                "e torna nitido quando ti fermi. Non c'entra niente con lo sfondo: puoi " +
-                "tenere il tuo.",
+            "Quando pieghi, tutto lo schermo va fuori fuoco e si scurisce \u2014 le app, " +
+                "le icone, tutto \u2014 e torna nitido quando ti fermi. Non c'entra niente " +
+                "con lo sfondo: puoi tenere il tuo.\n\n" +
+                "Nasce dall'animazione di apertura dell'iPhone Duo, ma non la riproduce: " +
+                "qui la sfocatura \u00e8 uniforme su tutto il fotogramma, e non \u00e8 detto " +
+                "che Apple la faccia cos\u00ec.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
