@@ -291,6 +291,8 @@ private fun FoldWallScreen(
 
         HingeProbeSection()
 
+        SensorSweepSection()
+
         PreviewCard(
             settings = settings,
             openness = openness,
@@ -961,6 +963,126 @@ private fun HingeProbeSection() {
                             ". Una riga per evento: millisecondi dall'avvio, gradi, " +
                             "distanza dall'evento precedente, orologio del sensore."
                     },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Listens to every sensor at once through a fold, to find out whether anything besides the
+ * hinge sensor carries usable information about how far the phone is open — see [SensorSweep].
+ */
+@Composable
+private fun SensorSweepSection() {
+    val context = LocalContext.current
+    var tick by remember { mutableIntStateOf(0) }
+    var copied by remember { mutableStateOf(false) }
+    var saved by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(400)
+            tick++
+        }
+    }
+    @Suppress("UNUSED_EXPRESSION")
+    tick
+
+    val running = SensorSweep.running
+    val movers = SensorSweep.movers()
+
+    SectionCard("Cerca un'alternativa al sensore cerniera") {
+        Text(
+            "Il sensore cerniera dà tre valori, quindi l'angolo da lì non si ricava. " +
+                "Accelerometro e giroscopio da soli non bastano: il telefono ha una sola " +
+                "centralina inerziale, dentro una delle due metà, e misura come si muove " +
+                "il telefono nello spazio, non come si apre la cerniera. Se tieni ferma " +
+                "quella metà e apri l'altra, non vede nulla.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            "Ma a bordo c'è altro: i magneti della cerniera, la luce, la prossimità, i " +
+                "sensori Samsung del folding. Invece di indovinare quale serva, questa " +
+                "prova li ascolta tutti insieme mentre pieghi e dice quali si sono mossi, " +
+                "e di quanto. Prova anche a registrarsi sui sensori Samsung per nome: " +
+                "vederli in elenco non vuol dire poterli leggere.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Button(
+            onClick = {
+                copied = false
+                saved = null
+                if (running) SensorSweep.stop() else SensorSweep.start(context)
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (running) "Ferma la ricerca" else "Ascolta tutti i sensori")
+        }
+
+        if (running) {
+            Text(
+                "In ascolto su " + SensorSweep.listening() + " sensori. Apri e chiudi " +
+                    "piano, due o tre volte, poi ferma.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+
+        if (SensorSweep.elapsedMs() > 0 && SensorSweep.listening() > 0) {
+            Text(
+                buildString {
+                    append("durata ").append(SensorSweep.elapsedMs() / 1000).append("s")
+                    append("   cambi di postura ").append(SensorSweep.hingeChanges()).append('\n')
+                    if (movers.isEmpty()) {
+                        append("nessun sensore si è ancora mosso")
+                    } else {
+                        append("si sono mossi di più:\n")
+                        append(movers.joinToString("\n"))
+                    }
+                },
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            OutlinedButton(
+                onClick = {
+                    val cm = context.getSystemService(ClipboardManager::class.java)
+                    cm?.setPrimaryClip(
+                        ClipData.newPlainText("FoldWall sweep", SensorSweep.report(context)),
+                    )
+                    copied = cm != null
+                    saved = null
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Copia il risultato")
+            }
+            if (copied) {
+                Text(
+                    "Copiato. Incollamelo qui.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            OutlinedButton(
+                onClick = {
+                    saved = SensorSweep.saveToDownloads(context) ?: ""
+                    copied = false
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Salva il risultato in Download")
+            }
+            val savedName = saved
+            if (savedName != null) {
+                Text(
+                    if (savedName.isEmpty()) "Non sono riuscito a scrivere il file."
+                    else "Salvato come " + savedName + ".",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                 )
