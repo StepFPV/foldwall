@@ -4,6 +4,8 @@ import android.Manifest
 import android.app.Activity
 import android.app.WallpaperManager
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -286,6 +288,8 @@ private fun FoldWallScreen(
         )
 
         LiveBlurSection(canOverlay = canOverlay)
+
+        HingeProbeSection()
 
         PreviewCard(
             settings = settings,
@@ -799,6 +803,168 @@ private fun LiveBlurSection(canOverlay: Boolean) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
             )
+        }
+    }
+}
+
+/**
+ * Records what the hinge sensor really delivers, and hands it over as a report.
+ *
+ * The question it answers is whether this device gives a continuous angle or only the three
+ * postures — see [HingeProbe]. It is a measurement, so it shows the raw readings rather than a
+ * conclusion, and the conclusion it does draw is the one the numbers support.
+ */
+@Composable
+private fun HingeProbeSection() {
+    val context = LocalContext.current
+    var tick by remember { mutableIntStateOf(0) }
+    var copied by remember { mutableStateOf(false) }
+    var saved by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(300)
+            tick++
+        }
+    }
+    @Suppress("UNUSED_EXPRESSION")
+    tick
+
+    val available = remember { HingeProbe.available(context) }
+    val recording = HingeProbe.recording
+    val samples = HingeProbe.count()
+    val values = HingeProbe.distinct().sorted()
+
+    SectionCard("Misura del sensore cerniera") {
+        Text(
+            "Due sviluppatori sostengono che sui Samsung il sensore pubblico non dia " +
+                "l'angolo ma solo tre valori — 0, 90 e 180 — e che quello vero sia " +
+                "riservato alle app di Samsung. Se è così, nessuna app può far seguire " +
+                "l'effetto all'apertura, e non è un problema di messa a punto.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            "Registra ogni singolo evento che il sensore manda, senza filtrarlo: il valore " +
+                "in gradi e l'istante esatto in cui arriva. Da lì si vede che sensore è, " +
+                "ogni quanto parla e a che scatti si muove. Avvia, apri e chiudi il " +
+                "telefono piano due o tre volte fermandoti a metà, poi ferma: la " +
+                "registrazione continua anche mentre il telefono è piegato e lo schermo " +
+                "grande è spento.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        if (!available) {
+            Text(
+                "Questo dispositivo non espone affatto il sensore cerniera pubblico. " +
+                    "È già una risposta, e vale la pena riferirla.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+
+        Button(
+            onClick = {
+                copied = false
+                if (recording) HingeProbe.stop() else HingeProbe.start(context)
+            },
+            enabled = available,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (recording) "Ferma la registrazione" else "Avvia la registrazione")
+        }
+
+        if (recording) {
+            Text(
+                "Sto registrando. Piega e apri, con calma.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+
+        if (samples > 0) {
+            Text(
+                buildString {
+                    append("eventi ").append(samples)
+                    append(" in ").append(HingeProbe.elapsedMs() / 1000).append("s")
+                    append("   valori diversi ").append(values.size).append('\n')
+                    if (values.isNotEmpty()) {
+                        append("da ").append(String.format(Locale.US, "%.1f", values.first()))
+                        append("° a ").append(String.format(Locale.US, "%.1f", values.last()))
+                        append("°   scalino minimo ")
+                        val step = HingeProbe.smallestStep()
+                        append(if (step.isNaN()) "n/d" else String.format(Locale.US, "%.2f", step))
+                        append('\n')
+                        val gap = HingeProbe.medianGapMs()
+                        append("un evento ogni ")
+                        append(if (gap.isNaN()) "n/d" else String.format(Locale.US, "%.0f", gap))
+                        append(" ms mentre si muove\n")
+                        append(values.joinToString("  ") {
+                            String.format(Locale.US, "%.1f", it)
+                        })
+                    }
+                },
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                if (HingeProbe.postureOnly()) {
+                    "Finora tutte le letture cadono su 0, 90 o 180: il sensore sta dando " +
+                        "la posizione, non l'angolo. Se è ancora così dopo qualche piega " +
+                        "lenta, i due sviluppatori hanno ragione."
+                } else {
+                    "Ci sono letture in mezzo alle posizioni fisse: questo telefono " +
+                        "l'angolo vero ce l'ha, e la loro misura non vale per il tuo modello."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            OutlinedButton(
+                onClick = {
+                    val text = HingeProbe.summary(context)
+                    val cm = context.getSystemService(ClipboardManager::class.java)
+                    cm?.setPrimaryClip(ClipData.newPlainText("FoldWall hinge summary", text))
+                    copied = cm != null
+                    saved = null
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Copia il riassunto")
+            }
+            if (copied) {
+                Text(
+                    "Copiato. Dentro c'è il modello, la versione di Android e One UI, tutto " +
+                        "quello che il sensore dichiara di sé, i valori visti e ogni quanto " +
+                        "arrivano. Incollamelo qui.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            OutlinedButton(
+                onClick = {
+                    saved = HingeProbe.saveToDownloads(context) ?: ""
+                    copied = false
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Salva il log completo (ogni evento)")
+            }
+            val savedName = saved
+            if (savedName != null) {
+                Text(
+                    if (savedName.isEmpty()) {
+                        "Non sono riuscito a scrivere il file. Il riassunto qui sopra " +
+                            "si copia comunque."
+                    } else {
+                        "Salvato in " + HingeProbe.downloadsLabel() + " come " + savedName +
+                            ". Una riga per evento: millisecondi dall'avvio, gradi, " +
+                            "distanza dall'evento precedente, orologio del sensore."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
         }
     }
 }
