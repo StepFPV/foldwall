@@ -293,6 +293,8 @@ private fun FoldWallScreen(
 
         SensorSweepSection()
 
+        MagCurveSection()
+
         PreviewCard(
             settings = settings,
             openness = openness,
@@ -1083,6 +1085,135 @@ private fun SensorSweepSection() {
                 Text(
                     if (savedName.isEmpty()) "Non sono riuscito a scrivere il file."
                     else "Salvato come " + savedName + ".",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Records the magnetic field against time through a slow fold, so the shape of the curve can
+ * be read rather than guessed at from its extremes — see [MagCurve].
+ */
+@Composable
+private fun MagCurveSection() {
+    val context = LocalContext.current
+    var tick by remember { mutableIntStateOf(0) }
+    var copied by remember { mutableStateOf(false) }
+    var saved by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(200)
+            tick++
+        }
+    }
+    @Suppress("UNUSED_EXPRESSION")
+    tick
+
+    val running = MagCurve.running
+
+    SectionCard("Curva del magnete della cerniera") {
+        Text(
+            "La ricerca ha trovato che il magnetometro oscilla di 146 µT chiudendo il " +
+                "telefono: tre volte il campo terrestre, quindi è il magnete della " +
+                "cerniera, non rumore. Resta da sapere la cosa che decide tutto: se il " +
+                "campo cresce in modo regolare mentre chiudi, l'angolo si può ricavare. " +
+                "Se scatta di colpo vicino alla chiusura, dice solo \"quasi chiuso\" e " +
+                "non serve.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            "Registra il campo istante per istante. Appoggia il telefono, avvia, poi " +
+                "chiudi e riapri MOLTO piano, fermandoti due o tre secondi a ogni tappa: " +
+                "aperto, tre quarti, metà, un quarto, chiuso, e ritorno. Ripeti il giro " +
+                "due o tre volte: le pause diventano gradini nella curva, e ripetere " +
+                "serve a vedere se i gradini cascano sempre allo stesso posto.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Button(
+            onClick = {
+                copied = false
+                saved = null
+                if (running) MagCurve.stop() else MagCurve.start(context)
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (running) "Ferma" else "Registra la curva")
+        }
+
+        if (running) {
+            val m = MagCurve.magnitudeNow()
+            val h = MagCurve.hingeNow()
+            Text(
+                buildString {
+                    append("campo ")
+                    append(if (m.isNaN()) "—" else String.format(Locale.US, "%.1f", m))
+                    append(" µT     cerniera ")
+                    append(if (h.isNaN()) "—" else String.format(Locale.US, "%.0f", h))
+                    append("°\n")
+                    append(MagCurve.count()).append(" righe in ")
+                    append(MagCurve.elapsedMs() / 1000).append("s")
+                },
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                "Guarda questo numero mentre chiudi: se scorre, siamo a cavallo. " +
+                    "Se resta fermo e poi salta, no.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        if (!running && MagCurve.count() > 0) {
+            Text(
+                MagCurve.count().toString() + " righe registrate in " +
+                    (MagCurve.elapsedMs() / 1000) + "s.",
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            OutlinedButton(
+                onClick = {
+                    val cm = context.getSystemService(ClipboardManager::class.java)
+                    cm?.setPrimaryClip(
+                        ClipData.newPlainText("FoldWall mag curve", MagCurve.summary(context)),
+                    )
+                    copied = cm != null
+                    saved = null
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Copia la curva (versione corta)")
+            }
+            if (copied) {
+                Text(
+                    "Copiato. Incollamelo qui: è la versione assottigliata, basta per " +
+                        "vedere la forma.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            OutlinedButton(
+                onClick = {
+                    saved = MagCurve.saveToDownloads(context) ?: ""
+                    copied = false
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Salva la curva completa (.csv)")
+            }
+            val savedName = saved
+            if (savedName != null) {
+                Text(
+                    if (savedName.isEmpty()) "Non sono riuscito a scrivere il file."
+                    else "Salvato in Download come " + savedName + ".",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                 )
