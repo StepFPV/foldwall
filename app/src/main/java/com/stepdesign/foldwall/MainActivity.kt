@@ -1116,21 +1116,21 @@ private fun MagCurveSection() {
 
     SectionCard("Curva del magnete della cerniera") {
         Text(
-            "La ricerca ha trovato che il magnetometro oscilla di 146 µT chiudendo il " +
-                "telefono: tre volte il campo terrestre, quindi è il magnete della " +
-                "cerniera, non rumore. Resta da sapere la cosa che decide tutto: se il " +
-                "campo cresce in modo regolare mentre chiudi, l'angolo si può ricavare. " +
-                "Se scatta di colpo vicino alla chiusura, dice solo \"quasi chiuso\" e " +
-                "non serve.",
+            "Misurato: sull'asse Z il campo scende di 25 µT fra aperto e angolo retto, " +
+                "senza mai tornare indietro, e ripete lo stesso valore a mezzo microtesla " +
+                "su tre giri. Fanno circa un grado di precisione. L'angolo, da lì, si " +
+                "ricava.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
-            "Registra il campo istante per istante. Appoggia il telefono, avvia, poi " +
-                "chiudi e riapri MOLTO piano, fermandoti due o tre secondi a ogni tappa: " +
-                "aperto, tre quarti, metà, un quarto, chiuso, e ritorno. Ripeti il giro " +
-                "due o tre volte: le pause diventano gradini nella curva, e ripetere " +
-                "serve a vedere se i gradini cascano sempre allo stesso posto.",
+            "Resta un disturbo da quantificare. Z è un asse del telefono: girandolo sul " +
+                "tavolo non cambia quasi nulla (1,3 µT), ma inclinandolo sì. Questa " +
+                "registrazione prende anche la gravità, che l'inclinazione la misura: se " +
+                "i due si muovono insieme, il disturbo si corregge.\n\n" +
+                "Prova da fare: cerniera FERMA a metà, e inclina il telefono in tutti i " +
+                "modi — su un fianco, ritto, capovolto, storto — con pause di tre secondi. " +
+                "Non piegare né chiudere: solo inclinare.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1153,7 +1153,10 @@ private fun MagCurveSection() {
                 buildString {
                     append("campo ")
                     append(if (m.isNaN()) "—" else String.format(Locale.US, "%.1f", m))
-                    append(" µT     cerniera ")
+                    append(" µT   Z ")
+                    val z = MagCurve.zNow()
+                    append(if (z.isNaN()) "—" else String.format(Locale.US, "%.1f", z))
+                    append("   cerniera ")
                     append(if (h.isNaN()) "—" else String.format(Locale.US, "%.0f", h))
                     append("°\n")
                     append(MagCurve.count()).append(" righe in ")

@@ -50,6 +50,7 @@ object MagCurve {
         val t: Long,
         val raw: FloatArray,
         val cal: FloatArray,
+        val grav: FloatArray,
         val light: Float,
         val hinge: Float,
     )
@@ -60,6 +61,7 @@ object MagCurve {
 
     private var lastRaw = FloatArray(3) { Float.NaN }
     private var lastCal = FloatArray(3) { Float.NaN }
+    private var lastGrav = FloatArray(3) { Float.NaN }
     private var lastLight = Float.NaN
     private var lastHinge = Float.NaN
 
@@ -80,6 +82,11 @@ object MagCurve {
                 }
                 Sensor.TYPE_MAGNETIC_FIELD ->
                     lastCal = floatArrayOf(event.values[0], event.values[1], event.values[2])
+                // Tilting the phone is the one rotation the magnetometer's Z axis cannot
+                // shrug off, and gravity measures tilt directly. Recorded alongside so the
+                // two can be compared rather than assumed independent.
+                Sensor.TYPE_GRAVITY ->
+                    lastGrav = floatArrayOf(event.values[0], event.values[1], event.values[2])
                 Sensor.TYPE_LIGHT -> lastLight = event.values[0]
                 Sensor.TYPE_HINGE_ANGLE -> {
                     lastHinge = event.values[0]
@@ -97,7 +104,9 @@ object MagCurve {
         val t = SystemClock.uptimeMillis() - startedAt
         synchronized(rows) {
             if (rows.size >= MAX_SAMPLES) return
-            rows.add(Row(t, lastRaw.copyOf(), lastCal.copyOf(), lastLight, lastHinge))
+            rows.add(
+                Row(t, lastRaw.copyOf(), lastCal.copyOf(), lastGrav.copyOf(), lastLight, lastHinge),
+            )
         }
         revision++
         if (t > MAX_DURATION_MS) stop()
@@ -112,6 +121,7 @@ object MagCurve {
         for (type in listOf(
             Sensor.TYPE_MAGNETIC_FIELD_UNCALIBRATED,
             Sensor.TYPE_MAGNETIC_FIELD,
+            Sensor.TYPE_GRAVITY,
             Sensor.TYPE_LIGHT,
             Sensor.TYPE_HINGE_ANGLE,
         )) {
@@ -141,6 +151,9 @@ object MagCurve {
 
     fun hingeNow(): Float = lastHinge
 
+    /** The axis that actually tracks the hinge, for a live read-out while folding. */
+    fun zNow(): Float = synchronized(rows) { rows.lastOrNull()?.raw?.get(2) ?: Float.NaN }
+
     private fun mag(v: FloatArray): Float {
         if (v.any { it.isNaN() }) return Float.NaN
         return sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
@@ -157,7 +170,10 @@ object MagCurve {
             .append("   android ").append(Build.VERSION.RELEASE)
             .append("   build ").append(Build.DISPLAY).append('\n')
         b.append("# raw = uncalibrated magnetometer, cal = calibrated, uT\n")
-        b.append("ms,raw_x,raw_y,raw_z,raw_mag,cal_x,cal_y,cal_z,cal_mag,light,hinge\n")
+        b.append(
+            "ms,raw_x,raw_y,raw_z,raw_mag,cal_x,cal_y,cal_z,cal_mag," +
+                "grav_x,grav_y,grav_z,light,hinge\n",
+        )
         synchronized(rows) {
             for (r in rows) {
                 b.append(r.t).append(',')
@@ -165,6 +181,8 @@ object MagCurve {
                     .append(f(r.raw[2], 3)).append(',').append(f(mag(r.raw), 3)).append(',')
                     .append(f(r.cal[0], 3)).append(',').append(f(r.cal[1], 3)).append(',')
                     .append(f(r.cal[2], 3)).append(',').append(f(mag(r.cal), 3)).append(',')
+                    .append(f(r.grav[0], 3)).append(',').append(f(r.grav[1], 3)).append(',')
+                    .append(f(r.grav[2], 3)).append(',')
                     .append(f(r.light, 1)).append(',').append(f(r.hinge, 1)).append('\n')
             }
         }
@@ -198,16 +216,20 @@ object MagCurve {
             }
         }
 
-        b.append("\nevenly spaced samples, raw uncalibrated field:\n")
-        b.append("ms\traw_x\traw_y\traw_z\t|raw|\tlight\thinge\n")
+        // raw_z leads, because it is the axis that carries the hinge; the magnitude is
+        // deliberately gone from this table after it turned out not to be monotonic.
+        b.append("\nevenly spaced samples. raw_z tracks the hinge;\n")
+        b.append("grav_z says how far the phone is tilted away from lying flat.\n")
+        b.append("ms\traw_z\traw_x\traw_y\tgrav_x\tgrav_y\tgrav_z\thinge\n")
         val step = maxOf(1, snapshot.size / SUMMARY_ROWS)
         var i = 0
         while (i < snapshot.size) {
             val r = snapshot[i]
             b.append(r.t).append('\t')
-                .append(f(r.raw[0])).append('\t').append(f(r.raw[1])).append('\t')
-                .append(f(r.raw[2])).append('\t').append(f(mag(r.raw))).append('\t')
-                .append(f(r.light, 0)).append('\t').append(f(r.hinge)).append('\n')
+                .append(f(r.raw[2])).append('\t').append(f(r.raw[0])).append('\t')
+                .append(f(r.raw[1])).append('\t')
+                .append(f(r.grav[0], 2)).append('\t').append(f(r.grav[1], 2)).append('\t')
+                .append(f(r.grav[2], 2)).append('\t').append(f(r.hinge)).append('\n')
             i += step
         }
         b.append("\nMeasured with FoldWall (MIT): https://github.com/StepFPV/foldwall\n")
