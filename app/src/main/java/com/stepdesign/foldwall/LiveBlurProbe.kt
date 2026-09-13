@@ -48,6 +48,44 @@ object LiveBlurProbe {
     private var window: View? = null
 
     /**
+     * Why the system might be saying no, read from the switches that are allowed to say it.
+     *
+     * `isCrossWindowBlurEnabled` gives a verdict and no reason. These three are the documented
+     * reasons, so reading them separates "a setting on this phone" from "the vendor does not
+     * offer it" — which is the difference between something to turn off and a wall.
+     */
+    private fun diagnose(context: Context, enabled: Boolean): String {
+        val disabledGlobally = try {
+            android.provider.Settings.Global.getInt(
+                context.contentResolver,
+                "disable_window_blurs",
+                0,
+            ) != 0
+        } catch (e: Exception) {
+            false
+        }
+        val powerSave = try {
+            context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true
+        } catch (e: Exception) {
+            false
+        }
+        val supported = try {
+            // The compositor's own answer, set per device at build time. False here means the
+            // hardware path was never enabled, whatever the user's settings say.
+            @Suppress("PrivateApi")
+            val sp = Class.forName("android.os.SystemProperties")
+            val get = sp.getMethod("get", String::class.java, String::class.java)
+            get.invoke(null, "ro.surface_flinger.supports_background_blur", "?") as String
+        } catch (e: Exception) {
+            "?"
+        }
+        return "il sistema dice sfocature " + (if (enabled) "ATTIVE" else "DISATTIVATE") +
+            "  ·  interruttore \"disable_window_blurs\": " + (if (disabledGlobally) "ACCESO" else "spento") +
+            "  ·  risparmio energetico: " + (if (powerSave) "ACCESO" else "spento") +
+            "  ·  il compositore dichiara supporto: " + supported
+    }
+
+    /**
      * Runs the probe. [report] is called with a line to show the user: first when the blur has
      * been asked for, then again when it is over.
      */
@@ -69,16 +107,13 @@ object LiveBlurProbe {
             Log.w(TAG, "cannot read isCrossWindowBlurEnabled", e)
             false
         }
-        if (!enabled) {
-            // Samsung and AOSP both switch blurs off for battery saver and for the
-            // reduce-transparency accessibility setting, and the system says so up front.
-            report(
-                "Il sistema dice che le sfocature sono disattivate. Di solito è il " +
-                    "risparmio energetico, oppure \"Riduci trasparenza ed effetti sfocatura\" " +
-                    "nelle impostazioni di accessibilità. Spegni quelle e riprova.",
-            )
-            return
-        }
+        // Deliberately no early return on `false`. The flag is the system's declaration, not
+        // proof: it goes false for battery saver and for the reduce-transparency setting, and
+        // a vendor can leave it false while the compositor still honours the request. On a
+        // Fold 8 it reads false with all three of those switches off, which is the claim that
+        // needs testing rather than believing. So ask anyway, and let the screen answer.
+        val why = diagnose(context, enabled)
+        Log.i(TAG, "live blur probe: " + why)
 
         val view = View(context)
         // A window that draws nothing at all can be left out of composition, and the blur
@@ -111,7 +146,7 @@ object LiveBlurProbe {
         report(
             "Sfocatura chiesta al sistema, per " + DURATION_MS / 1000 + " secondi. Guarda lo " +
                 "schermo — e se vuoi premi Home adesso: la prova resta in piedi, così la " +
-                "vedi sulla schermata principale con le tue icone.",
+                "vedi sulla schermata principale con le tue icone.\n\n" + why,
         )
 
         main.postDelayed({
@@ -134,10 +169,13 @@ object LiveBlurProbe {
             }
             Log.i(TAG, "live blur probe: finished")
             report(
-                "Finita. Se lo schermo è andato fuori fuoco — icone e app comprese, " +
-                    "non solo lo sfondo — allora questa strada funziona sul tuo telefono " +
-                    "e l'effetto si può rifare così, senza screenshot. Se non si è " +
-                    "mosso niente, One UI non la concede e resta la strada attuale.",
+                "Finita. La finestra è stata aggiunta e la sfocatura chiesta davvero, " +
+                    "nonostante il sistema dicesse di no: quindi adesso conta solo cosa " +
+                    "hai visto.\n\n" +
+                    "Schermo andato fuori fuoco — icone e app comprese → si può fare, e " +
+                    "quel \"no\" era una dichiarazione sbagliata.\n" +
+                    "Niente di niente → One UI non la concede, e la strada è chiusa " +
+                    "davvero.\n\n" + why,
             )
         }, DURATION_MS)
     }
